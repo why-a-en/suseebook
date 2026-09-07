@@ -19,10 +19,10 @@ export default function NewProductPage() {
       <ScrollBody>
         <form action={createProductAction} className="grid gap-4 px-5 pt-4 pb-8">
           <Field label="Name" required>
-            <Input name="name" icon="package" autoComplete="off" />
+            <Input name="name" icon="package" autoComplete="off" placeholder="Denim jacket" />
           </Field>
           <Field label="Description" required>
-            <Textarea name="description" icon="align-left" rows={3} />
+            <Textarea name="description" icon="align-left" rows={3} placeholder="Colour, fabric, fit — anything the customer should know" />
           </Field>
           <Field label="Images">
             <ImageUploadField />
@@ -31,16 +31,16 @@ export default function NewProductPage() {
             <Input name="sourceUrl" type="url" icon="link" placeholder="https://…" />
           </Field>
           <Field label="Price" hint="Optional, MMK">
-            <Input name="price" type="number" inputMode="decimal" step="0.01" min="0" icon="coins" suffix="MMK" />
+            <Input name="price" type="number" inputMode="decimal" step="0.01" min="0" icon="coins" suffix="MMK" placeholder="15000" />
           </Field>
 
           <div className="grid gap-4 rounded-md border border-line-hairline p-3">
             <span className="font-mono text-label tracking-label uppercase text-text-faint">Modifier (optional)</span>
-            <Field label="Name" hint="e.g. Color, Size">
-              <Input name="modifierName" icon="tag" autoComplete="off" />
+            <Field label="Name" hint="What varies — size, colour, material">
+              <Input name="modifierName" icon="tag" autoComplete="off" placeholder="Colour" />
             </Field>
-            <Field label="Options" hint="Comma-separated, e.g. Black, White, Red">
-              <Input name="modifierOptions" icon="list" autoComplete="off" />
+            <Field label="Options" hint="Comma-separated">
+              <Input name="modifierOptions" icon="list" autoComplete="off" placeholder="Black, White, Red" />
             </Field>
           </div>
 

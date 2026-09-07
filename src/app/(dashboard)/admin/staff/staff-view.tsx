@@ -163,10 +163,10 @@ function AddStaffForm({ stores, onDone }: { stores: Store[]; onDone: () => void 
       <form action={formAction}>
         <SheetBody className="grid gap-4">
           <Field label="Name" required>
-            <Input name="name" autoComplete="off" />
+            <Input name="name" autoComplete="off" placeholder="Aung Aung" />
           </Field>
           <Field label="Email" required>
-            <Input name="email" type="email" autoComplete="off" icon="at-sign" />
+            <Input name="email" type="email" autoComplete="off" icon="at-sign" placeholder="name@example.com" />
           </Field>
           <Field label="Role" required>
             <SegmentedControl options={ROLE_OPTIONS} value={role} onChange={setRole} />

@@ -383,13 +383,13 @@ export function NewOrderWizard({
     body = addingCustomer ? (
       <div className="grid gap-4 px-5">
         <Field label="Name" required>
-          <Input icon="user" autoComplete="name" value={newCustomerName} onChange={(e) => setNewCustomerName(e.target.value)} />
+          <Input icon="user" autoComplete="name" placeholder="Aung Aung" value={newCustomerName} onChange={(e) => setNewCustomerName(e.target.value)} />
         </Field>
         <Field label="Phone" required>
           <Input icon="phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="09 …" value={newCustomerPhone} onChange={(e) => setNewCustomerPhone(e.target.value)} />
         </Field>
         <Field label="Address" required hint="Needed to ship the parcel once it arrives.">
-          <Textarea icon="map-pin" rows={2} autoComplete="street-address" value={newCustomerAddress} onChange={(e) => setNewCustomerAddress(e.target.value)} />
+          <Textarea icon="map-pin" rows={2} autoComplete="street-address" placeholder="House, street, township, city" value={newCustomerAddress} onChange={(e) => setNewCustomerAddress(e.target.value)} />
         </Field>
       </div>
     ) : (
@@ -481,10 +481,10 @@ export function NewOrderWizard({
       // Sheet stacked over a wizard that already owns the whole screen.
       <div className="grid gap-4 px-5">
         <Field label="Name" required>
-          <Input icon="package" autoComplete="off" value={newProductName} onChange={(e) => setNewProductName(e.target.value)} />
+          <Input icon="package" autoComplete="off" placeholder="Denim jacket" value={newProductName} onChange={(e) => setNewProductName(e.target.value)} />
         </Field>
         <Field label="Description" required>
-          <Textarea icon="align-left" rows={2} value={newProductDescription} onChange={(e) => setNewProductDescription(e.target.value)} />
+          <Textarea icon="align-left" rows={2} placeholder="Colour, fabric, fit — anything the customer should know" value={newProductDescription} onChange={(e) => setNewProductDescription(e.target.value)} />
         </Field>
         <Field label="Source URL" hint="Link to the exact Lazada/TikTok Shop listing.">
           <Input
@@ -503,6 +503,7 @@ export function NewOrderWizard({
             min="0"
             icon="coins"
             suffix="MMK"
+            placeholder="15000"
             value={newProductPrice}
             onChange={(e) => setNewProductPrice(e.target.value)}
           />
@@ -533,7 +534,7 @@ export function NewOrderWizard({
               ))}
             </div>
             <Field className="px-5" label="Notes" hint="Optional — anything the Supplier should know">
-              <Textarea icon="align-left" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
+              <Textarea icon="align-left" rows={2} placeholder="Anything the Supplier should know" value={notes} onChange={(e) => setNotes(e.target.value)} />
             </Field>
           </>
         ) : null}

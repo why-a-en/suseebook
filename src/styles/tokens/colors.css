@@ -128,12 +128,16 @@
   --surface-sunken:  oklch(0.946 0.004 100);
   --surface-invert:  oklch(0.205 0.005 80);
 
-  /* Floor set against --surface-sunken, the lightest-relative surface .lbl lands
-     on — not against --surface-card. */
+  /* Ink ramp. Paper is a bright ground — L 0.95–1.0 across the surfaces — so
+     the inks have to run genuinely dark to hold contrast on it, darker than a
+     naive mirror of the dark theme would suggest. Measured on --surface-card
+     (white): body ~8.5:1, muted ~7:1, faint ~6:1 — and faint still clears
+     4.5:1 on --surface-sunken / --surface-page, which is the floor it has to
+     meet for the 10px mono micro-labels. */
   --text-strong:     oklch(0.215 0.006 80);
-  --text-body:       oklch(0.475 0.006 90);
-  --text-muted:      oklch(0.500 0.006 90);
-  --text-faint:      oklch(0.545 0.006 90);
+  --text-body:       oklch(0.400 0.006 90);
+  --text-muted:      oklch(0.450 0.006 90);
+  --text-faint:      oklch(0.495 0.006 90);
   --text-invert:     oklch(0.982 0.003 100);
 
   --line-hairline:   oklch(0.918 0.004 100);
@@ -148,7 +152,7 @@
   --accent-press:    oklch(0.150 0.006 80);
   --accent-ink:      oklch(0.982 0.003 100);
   --accent-wash:     oklch(0.918 0.004 100);
-  --accent-quiet:    oklch(0.500 0.006 90);
+  --accent-quiet:    oklch(0.450 0.006 90);
   --accent-text:     oklch(0.215 0.006 80);
 
   /* The same ramp, mirrored: dark climbs toward white, light descends toward

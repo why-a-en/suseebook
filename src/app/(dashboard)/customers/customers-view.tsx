@@ -95,13 +95,13 @@ export function CustomersView({ customers }: { customers: CustomerRowData[] }) {
           <SheetBody>
             <div className="grid gap-4 py-2">
               <Field label="Name" required>
-                <Input icon="user" autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} />
+                <Input icon="user" autoComplete="name" placeholder="Aung Aung" value={name} onChange={(e) => setName(e.target.value)} />
               </Field>
               <Field label="Phone" required>
                 <Input icon="phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="09 …" value={phone} onChange={(e) => setPhone(e.target.value)} />
               </Field>
               <Field label="Address" required hint="Needed to ship the parcel once it arrives.">
-                <Textarea icon="map-pin" rows={2} autoComplete="street-address" value={address} onChange={(e) => setAddress(e.target.value)} />
+                <Textarea icon="map-pin" rows={2} autoComplete="street-address" placeholder="House, street, township, city" value={address} onChange={(e) => setAddress(e.target.value)} />
               </Field>
               <Button full icon="user-plus" disabled={!name || !phone || !address || isPending} onClick={handleCreate}>
                 {isPending ? "Creating…" : "Create customer"}

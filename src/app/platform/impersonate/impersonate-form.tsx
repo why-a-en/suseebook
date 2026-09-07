@@ -22,7 +22,7 @@ export function ImpersonateForm() {
         required
         hint="Every impersonated session is recorded permanently."
       >
-        <Input name="email" type="email" autoComplete="off" placeholder="cs@client.com" icon="at-sign" />
+        <Input name="email" type="email" autoComplete="off" placeholder="name@example.com" icon="at-sign" />
       </Field>
       {state?.error && <p className="font-ui text-small text-danger">{state.error}</p>}
       <Button full type="submit" variant="secondary" icon="user" disabled={pending}>

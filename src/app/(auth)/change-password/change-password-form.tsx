@@ -17,13 +17,14 @@ export function ChangePasswordForm({ forced }: { forced: boolean }) {
           type="password"
           autoComplete="current-password"
           icon="lock"
+          placeholder="••••••••"
         />
       </Field>
       <Field label="New password" required hint="At least 8 characters.">
-        <Input name="newPassword" type="password" autoComplete="new-password" icon="lock" />
+        <Input name="newPassword" type="password" autoComplete="new-password" icon="lock" placeholder="••••••••" />
       </Field>
       <Field label="Confirm new password" required>
-        <Input name="confirmPassword" type="password" autoComplete="new-password" icon="lock" />
+        <Input name="confirmPassword" type="password" autoComplete="new-password" icon="lock" placeholder="••••••••" />
       </Field>
       {state?.error && <p className="font-ui text-small text-danger">{state.error}</p>}
       <Button full type="submit" disabled={pending}>

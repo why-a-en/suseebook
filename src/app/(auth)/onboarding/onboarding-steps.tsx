@@ -26,7 +26,7 @@ function CreateStoreStep() {
   return (
     <form action={formAction} className="grid gap-4">
       <Field label="Store name" required>
-        <Input name="name" autoComplete="off" placeholder="e.g. Yangon Downtown" />
+        <Input name="name" autoComplete="off" placeholder="Yangon Downtown" />
       </Field>
       {state?.error && <p className="font-ui text-small text-danger">{state.error}</p>}
       <Button full type="submit" disabled={pending} icon="store">
@@ -63,10 +63,10 @@ function AddStaffStep({ stores }: { stores: Store[] }) {
   return (
     <form action={formAction} className="grid gap-4">
       <Field label="Name" required>
-        <Input name="name" autoComplete="off" />
+        <Input name="name" autoComplete="off" placeholder="Aung Aung" />
       </Field>
       <Field label="Email" required>
-        <Input name="email" type="email" autoComplete="off" icon="at-sign" />
+        <Input name="email" type="email" autoComplete="off" icon="at-sign" placeholder="name@example.com" />
       </Field>
       <Field label="Role" required>
         <SegmentedControl options={ROLE_OPTIONS} value={role} onChange={setRole} />

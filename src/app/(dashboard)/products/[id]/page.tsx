@@ -169,11 +169,11 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
               <summary className="cursor-pointer font-ui text-small-strong text-text-strong">+ New modifier</summary>
               <form action={createModifierAction} className="mt-3 grid gap-4">
                 <input type="hidden" name="productId" value={product.id} />
-                <Field label="Name" required hint="e.g. Color, Size">
-                  <Input name="modifierName" icon="tag" autoComplete="off" />
+                <Field label="Name" required hint="What varies — size, colour, material">
+                  <Input name="modifierName" icon="tag" autoComplete="off" placeholder="Colour" />
                 </Field>
-                <Field label="Options" required hint="Comma-separated, e.g. Black, White, Red">
-                  <Input name="options" icon="list" autoComplete="off" />
+                <Field label="Options" required hint="Comma-separated">
+                  <Input name="options" icon="list" autoComplete="off" placeholder="Black, White, Red" />
                 </Field>
                 <Button full type="submit" icon="check">
                   Create and attach

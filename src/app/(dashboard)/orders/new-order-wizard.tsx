@@ -16,7 +16,6 @@ import { IconButton } from "@/components/ui/icon-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { CustomerRow } from "@/components/ui/customer-row";
 import { ProductRow } from "@/components/ui/product-row";
-import { OrderItemRow } from "@/components/ui/order-item-row";
 import { SectionHeader } from "@/components/ui/section-header";
 import { Sheet, SheetContent, SheetHeader, SheetBody, SheetFooter } from "@/components/ui/sheet";
 import { ErrorDialog } from "@/components/ui/error-dialog";
@@ -32,6 +31,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Icon } from "@/components/icon";
 import { armNavigationGuard, disarmNavigationGuard } from "@/lib/navigation-guard";
+import { cn } from "@/lib/utils";
 import { createProductInlineAction } from "@/app/(dashboard)/products/actions";
 import { createCustomerAction, saveOrderAction, searchCustomersAction } from "./actions";
 
@@ -238,9 +238,11 @@ export function NewOrderWizard({
   const [picking, setPicking] = useState<WizardProduct | null>(null);
   const [selections, setSelections] = useState<Record<string, string>>({});
   const [qty, setQty] = useState(1);
-  // The Items step's order list lives in a sheet behind a pinned bar, so the
-  // catalog keeps the whole screen no matter how long the order gets.
-  const [cartOpen, setCartOpen] = useState(false);
+  // The order so far lives in a panel behind the running-total line in the
+  // footer, so the catalog keeps the whole screen no matter how long the
+  // order gets. `editingLine` is the line key whose stepper is open.
+  const [orderPanelOpen, setOrderPanelOpen] = useState(false);
+  const [editingLine, setEditingLine] = useState<string | null>(null);
   // Where a blocked navigation was trying to go — non-null means the
   // "leave without saving?" dialog is open. "" stands for "just close the
   // dialog" cases that shouldn't be reachable.
@@ -326,6 +328,11 @@ export function NewOrderWizard({
     if (price == null) hasUnpricedItem = true;
     else priceTotal += Number(price) * line.quantity;
   }
+  // Money is common but not guaranteed at order time (Price is optional on a
+  // product). With nothing priced there's no figure worth showing — the
+  // docket drops the amount column and just carries line counts.
+  const showAmounts = priceTotal > 0;
+  const totalText = `${priceTotal.toLocaleString()} MMK${hasUnpricedItem ? "+" : ""}`;
 
   // Is there work that would be lost by leaving? A fresh order is dirty once
   // a customer is picked or anything is typed; a resumed draft only once
@@ -444,15 +451,22 @@ export function NewOrderWizard({
     setQty(1);
   }
 
-  function setCartLineQty(key: string, quantity: number) {
+  function setOrderLineQty(key: string, quantity: number) {
     setCart((prev) => prev.map((line) => (line.key === key ? { ...line, quantity } : line)));
   }
 
-  function removeCartLine(key: string) {
+  function removeOrderLine(key: string) {
     const next = cart.filter((line) => line.key !== key);
     setCart(next);
+    setEditingLine(null);
     // Nothing left to show — a resumed draft's own items keep it relevant.
-    if (next.length === 0 && existingItems.length === 0) setCartOpen(false);
+    if (next.length === 0 && existingItems.length === 0) setOrderPanelOpen(false);
+  }
+
+  /** A line's extended price, formatted, or "—" when the product has no set
+   *  price. No currency suffix — the docket carries it once, on the total. */
+  function lineAmount(productPrice: string | null, quantity: number): string {
+    return productPrice == null ? "—" : (Number(productPrice) * quantity).toLocaleString();
   }
 
   // Every path out of the wizard that isn't "Place order" goes through here:
@@ -841,25 +855,25 @@ export function NewOrderWizard({
         </Button>
       </div>
     ) : (
-      <div className="grid gap-2">
+      <div className="grid gap-3">
         {totalItemCount ? (
+          // The order so far, as the subtotal line of a docket: mono
+          // micro-caps count on the left, tabular figure on the right, the
+          // Foot's own top hairline as its rule. Tap to open the full list.
           <button
             type="button"
-            onClick={() => setCartOpen(true)}
-            aria-label="Open the order"
-            className="flex items-center justify-between gap-2 rounded-full border border-line-hairline bg-surface-raised px-4 py-2.5 font-ui text-small-strong text-text-strong transition-transform duration-fast ease-standard active:scale-[0.985]"
+            onClick={() => setOrderPanelOpen(true)}
+            aria-label="Show the order so far"
+            className="-mx-2 flex items-baseline justify-between gap-3 rounded-sm px-2 py-1 text-left transition-colors duration-fast ease-standard active:bg-surface-hover"
           >
-            <span className="flex min-w-0 items-center gap-2">
-              <Icon name="shopping-cart" size={16} className="shrink-0 text-text-muted" />
-              <span className="truncate">
-                {totalItemCount} item{totalItemCount === 1 ? "" : "s"}
-                <span className="text-text-faint"> · </span>
-                <span className="[font-variant-numeric:tabular-nums]">
-                  {priceTotal.toLocaleString()} MMK{hasUnpricedItem ? "+" : ""}
-                </span>
-              </span>
+            <span className="font-mono text-label tracking-label uppercase text-text-faint">
+              Order · {totalItemCount} line{totalItemCount === 1 ? "" : "s"}
             </span>
-            <Icon name="chevron-up" size={16} className="shrink-0 text-text-faint" />
+            {showAmounts ? (
+              <span className="font-ui text-small-strong text-text-strong [font-variant-numeric:tabular-nums]">
+                {totalText}
+              </span>
+            ) : null}
           </button>
         ) : null}
         <div className="flex gap-2">
@@ -888,22 +902,46 @@ export function NewOrderWizard({
         </div>
 
         <div className="min-w-0">
-          <SectionHeader right={`${totalItemCount} items`}>Items</SectionHeader>
-          {existingItems.map((line, i) => (
-            <OrderItemRow key={`existing-${i}`} product={line.productName} selection={line.selection} qty={line.quantity} status="Pending" />
-          ))}
-          {cart.map((line) => (
-            <OrderItemRow key={line.key} product={line.productName} selection={line.selection} qty={line.quantity} status="Pending" />
+          <SectionHeader right={`${totalItemCount} line${totalItemCount === 1 ? "" : "s"}`}>Order</SectionHeader>
+          {[
+            ...existingItems.map((line, i) => ({
+              key: `existing-${i}`,
+              name: line.productName,
+              selection: line.selection,
+              quantity: line.quantity,
+              amount: showAmounts ? lineAmount(line.price, line.quantity) : null,
+            })),
+            ...cart.map((line) => ({
+              key: line.key,
+              name: line.productName,
+              selection: line.selection,
+              quantity: line.quantity,
+              amount: showAmounts ? lineAmount(allProducts.find((p) => p.id === line.productId)?.price ?? null, line.quantity) : null,
+            })),
+          ].map((line) => (
+            <div key={line.key} className="border-b border-line-hairline px-5 py-3 last:border-b-0">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="min-w-0 truncate font-ui text-body-strong text-text-strong">{line.name}</span>
+                {line.amount != null ? (
+                  <span className="shrink-0 font-ui text-small-strong text-text-strong [font-variant-numeric:tabular-nums]">{line.amount}</span>
+                ) : null}
+              </div>
+              <div className="mt-0.5 font-ui text-small text-text-muted">
+                {[...line.selection, `×${line.quantity}`].join("  ·  ")}
+              </div>
+            </div>
           ))}
           <div className="flex items-baseline justify-between px-5 pt-3">
-            <span className="font-ui text-body-strong text-text-strong">Total</span>
-            <span className="font-ui text-body-strong text-text-strong [font-variant-numeric:tabular-nums]">
-              {priceTotal.toLocaleString()} MMK{hasUnpricedItem ? "+" : ""}
+            <span className="font-mono text-label tracking-label uppercase text-text-faint">Total</span>
+            <span
+              className={cn(
+                "font-ui text-body-strong [font-variant-numeric:tabular-nums]",
+                showAmounts ? "text-text-strong" : "text-text-faint",
+              )}
+            >
+              {showAmounts ? totalText : "Not priced yet"}
             </span>
           </div>
-          {hasUnpricedItem ? (
-            <p className="px-5 pt-0.5 font-ui text-small text-text-faint">One or more items don&rsquo;t have a set price yet — total is a minimum.</p>
-          ) : null}
         </div>
 
         {/* Notes is entered here, not on Items — it annotates the whole
@@ -969,44 +1007,79 @@ export function NewOrderWizard({
         </AlertDialogContent>
       </AlertDialog>
 
-      <Sheet open={cartOpen} onOpenChange={setCartOpen}>
+      <Sheet
+        open={orderPanelOpen}
+        onOpenChange={(open) => {
+          setOrderPanelOpen(open);
+          if (!open) setEditingLine(null);
+        }}
+      >
         <SheetContent>
-          <SheetHeader title="On this order" eyebrow={`${totalItemCount} item${totalItemCount === 1 ? "" : "s"}`} />
-          <SheetBody className="grid gap-0">
+          <SheetHeader title="Order" eyebrow={customer ? `For ${customer.name}` : undefined} />
+          <SheetBody className="pt-1">
+            {/* Lines already saved on the draft — shown for the whole
+                picture, greyed, no editing (that needs a server round-trip). */}
             {existingItems.map((line, i) => (
-              <div key={`existing-${i}`} className="flex items-center gap-3 border-b border-line-hairline py-3 last:border-b-0">
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-ui text-body-strong text-text-strong">{line.productName}</span>
-                  {line.selection.length ? (
-                    <span className="block truncate font-ui text-small text-text-muted">{line.selection.join(" · ")}</span>
+              <div key={`existing-${i}`} className="border-b border-line-hairline py-3 last:border-b-0">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="min-w-0 truncate font-ui text-body-strong text-text-muted">{line.productName}</span>
+                  {showAmounts ? (
+                    <span className="shrink-0 font-ui text-small-strong text-text-faint [font-variant-numeric:tabular-nums]">
+                      {lineAmount(line.price, line.quantity)}
+                    </span>
                   ) : null}
-                </span>
-                {/* Already saved on the draft — not editable from here. */}
-                <span className="shrink-0 font-ui text-small text-text-faint [font-variant-numeric:tabular-nums]">×{line.quantity}</span>
+                </div>
+                <div className="mt-0.5 font-ui text-small text-text-faint">
+                  {[...line.selection, `×${line.quantity}`].join("  ·  ")}
+                </div>
               </div>
             ))}
-            {cart.map((line) => (
-              <div key={line.key} className="flex items-center gap-2 border-b border-line-hairline py-3 last:border-b-0">
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-ui text-body-strong text-text-strong">{line.productName}</span>
-                  {line.selection.length ? (
-                    <span className="block truncate font-ui text-small text-text-muted">{line.selection.join(" · ")}</span>
+
+            {cart.map((line) => {
+              const editing = editingLine === line.key;
+              const unitPrice = allProducts.find((p) => p.id === line.productId)?.price ?? null;
+              return (
+                <div key={line.key} className="border-b border-line-hairline last:border-b-0">
+                  <button
+                    type="button"
+                    onClick={() => setEditingLine(editing ? null : line.key)}
+                    aria-expanded={editing}
+                    className="flex w-full flex-col gap-0.5 rounded-sm py-3 text-left transition-colors duration-fast ease-standard active:bg-surface-hover"
+                  >
+                    <span className="flex items-baseline justify-between gap-3">
+                      <span className="min-w-0 truncate font-ui text-body-strong text-text-strong">{line.productName}</span>
+                      {showAmounts ? (
+                        <span className="shrink-0 font-ui text-small-strong text-text-strong [font-variant-numeric:tabular-nums]">
+                          {lineAmount(unitPrice, line.quantity)}
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="font-ui text-small text-text-muted">
+                      {[...line.selection, `×${line.quantity}`].join("  ·  ")}
+                    </span>
+                  </button>
+                  {editing ? (
+                    <div className="mb-3 flex items-center justify-between gap-3 rounded-sm bg-surface-sunken px-3 py-2.5">
+                      <QtyDial value={line.quantity} onChange={(n) => setOrderLineQty(line.key, n)} min={1} />
+                      <Button variant="danger" size="sm" icon="x" onClick={() => removeOrderLine(line.key)}>
+                        Remove
+                      </Button>
+                    </div>
                   ) : null}
-                </span>
-                <QtyDial value={line.quantity} onChange={(n) => setCartLineQty(line.key, n)} min={1} className="shrink-0" />
-                <IconButton icon="x" label={`Remove ${line.productName}`} size="icon-sm" onClick={() => removeCartLine(line.key)} className="shrink-0" />
-              </div>
-            ))}
+                </div>
+              );
+            })}
           </SheetBody>
-          <SheetFooter>
-            <div className="flex items-baseline justify-between">
-              <span className="font-ui text-body-strong text-text-strong">Total</span>
-              <span className="font-ui text-body-strong text-text-strong [font-variant-numeric:tabular-nums]">
-                {priceTotal.toLocaleString()} MMK{hasUnpricedItem ? "+" : ""}
-              </span>
-            </div>
-            {/* The trailing "+" is the whole story here; the sentence
-                spelling it out lives on Review, where there's room. */}
+          <SheetFooter className="flex items-baseline justify-between">
+            <span className="font-mono text-label tracking-label uppercase text-text-faint">Total</span>
+            <span
+              className={cn(
+                "font-ui text-body-strong [font-variant-numeric:tabular-nums]",
+                showAmounts ? "text-text-strong" : "text-text-faint",
+              )}
+            >
+              {showAmounts ? totalText : "Not priced yet"}
+            </span>
           </SheetFooter>
         </SheetContent>
       </Sheet>

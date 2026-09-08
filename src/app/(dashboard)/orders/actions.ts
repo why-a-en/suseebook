@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { withCurrentOrganization, withCurrentStore } from "@/lib/tenancy";
 import { createCustomer } from "@/services/customers";
-import { cancelOrderItem, saveOrder, type SaveOrderInput } from "@/services/orders";
+import { cancelOrderItem, deleteDraft, saveOrder, type SaveOrderInput } from "@/services/orders";
 import {
   fetchOrdersPage,
   searchCustomers,
@@ -68,12 +68,22 @@ export async function saveOrderAction(input: SaveOrderInput): Promise<{ orderId:
   const { orderId, placed } = await withCurrentStore((ctx) => saveOrder(ctx, input));
 
   revalidatePath("/orders");
-  if (placed) {
-    revalidatePath("/purchase-queue");
-    revalidatePath("/parcels");
-    redirect(`/orders/${orderId}`);
-  }
+  // Draft items feed the Purchase Queue too (there's no placed_at gate on
+  // it), and a resumed-draft save reconciles the pending set — so refresh
+  // those views on every save, not only when placing.
+  revalidatePath("/purchase-queue");
+  revalidatePath("/parcels");
+  if (placed) redirect(`/orders/${orderId}`);
   return { orderId };
+}
+
+/** Deletes a draft order (see deleteDraft — pending/cancelled items only). */
+export async function deleteDraftAction(orderId: string): Promise<void> {
+  await withCurrentStore((ctx) => deleteDraft(ctx, { orderId }));
+  revalidatePath("/orders");
+  revalidatePath("/purchase-queue");
+  revalidatePath("/parcels");
+  redirect("/orders");
 }
 
 /**

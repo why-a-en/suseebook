@@ -1,4 +1,4 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, notInArray } from "drizzle-orm";
 import { orderItemModifiers, orderItems, orders } from "@/db/schema";
 import { ServiceError, type ServiceContext } from "./types";
 
@@ -60,6 +60,21 @@ export async function saveOrder(
       .update(orders)
       .set({ notes, ...(input.place ? { placedAt: new Date() } : {}) })
       .where(and(eq(orders.id, id), eq(orders.organizationId, ctx.organizationId), eq(orders.storeId, storeId)));
+
+    // The wizard hands back the full pending set every save; reconcile by
+    // replacing it. Only pending rows are cleared — a line the Supplier
+    // has already bought isn't the composer's to reshape, and the resume
+    // query never loaded it into the wizard in the first place. The FK
+    // from order_item_modifiers cascades on this delete.
+    await ctx.tx
+      .delete(orderItems)
+      .where(
+        and(
+          eq(orderItems.orderId, id),
+          eq(orderItems.organizationId, ctx.organizationId),
+          eq(orderItems.status, "pending"),
+        ),
+      );
   } else {
     // Only a brand-new order saved *as a draft* counts against the cap —
     // placing outright never creates a draft in the first place, and updating
@@ -160,4 +175,52 @@ export async function cancelOrderItem(
         eq(orderItems.organizationId, ctx.organizationId),
       ),
     );
+}
+
+/**
+ * Hard-deletes a draft order and its items (the FK from order_items — and
+ * from order_item_modifiers below that — cascades). Only a draft, and only
+ * one whose every item is still pending or already cancelled: once the
+ * Supplier has bought against a line, the order is a real record and
+ * dropping it silently would lose that. Placed orders are never deletable
+ * here — cancel their items instead.
+ */
+export async function deleteDraft(
+  ctx: ServiceContext,
+  input: { orderId: string },
+): Promise<void> {
+  if (!ctx.storeId) throw new ServiceError("No active Store — pick one in Settings.");
+
+  const [order] = await ctx.tx
+    .select({ id: orders.id })
+    .from(orders)
+    .where(
+      and(
+        eq(orders.id, input.orderId),
+        eq(orders.organizationId, ctx.organizationId),
+        eq(orders.storeId, ctx.storeId),
+        isNull(orders.placedAt),
+      ),
+    )
+    .limit(1);
+  if (!order) throw new ServiceError("That draft doesn't exist here.");
+
+  const [advanced] = await ctx.tx
+    .select({ id: orderItems.id })
+    .from(orderItems)
+    .where(
+      and(
+        eq(orderItems.orderId, input.orderId),
+        eq(orderItems.organizationId, ctx.organizationId),
+        notInArray(orderItems.status, ["pending", "cancelled"]),
+      ),
+    )
+    .limit(1);
+  if (advanced) {
+    throw new ServiceError("This draft has items the Supplier is already working on — it can't be deleted.");
+  }
+
+  await ctx.tx
+    .delete(orders)
+    .where(and(eq(orders.id, input.orderId), eq(orders.organizationId, ctx.organizationId), eq(orders.storeId, ctx.storeId)));
 }

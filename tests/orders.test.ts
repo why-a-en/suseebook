@@ -13,7 +13,7 @@ import {
   stores,
   users,
 } from "@/db/schema";
-import { MAX_OPEN_DRAFTS_PER_USER, cancelOrderItem, saveOrder } from "@/services/orders";
+import { MAX_OPEN_DRAFTS_PER_USER, cancelOrderItem, deleteDraft, saveOrder } from "@/services/orders";
 import { ServiceError, type ServiceContext } from "@/services/types";
 
 // Testable only because the rules moved out of the Server Action — none of
@@ -199,6 +199,65 @@ describe("saveOrder", () => {
     expect(order.placedAt).toBeNull();
   });
 
+  it("reconciles a resumed draft's pending items against the set it's given", async () => {
+    const { orderId } = await asOrg(orgId, (ctx) =>
+      saveOrder(ctx, {
+        customerId,
+        place: false,
+        items: [{ productId, modifierOptionIds: [optionId], quantity: 1 }],
+      }),
+    );
+
+    // Resume: same product, new quantity, no modifier — one line, replaced.
+    await asOrg(orgId, (ctx) =>
+      saveOrder(ctx, {
+        orderId,
+        customerId,
+        place: false,
+        items: [{ productId, modifierOptionIds: [], quantity: 4 }],
+      }),
+    );
+
+    const items = await asOrg(orgId, ({ tx }) =>
+      tx.select().from(orderItems).where(eq(orderItems.orderId, orderId)),
+    );
+    expect(items).toHaveLength(1);
+    expect(items[0].quantity).toBe(4);
+
+    const mods = await asOrg(orgId, ({ tx }) =>
+      tx.select().from(orderItemModifiers).where(eq(orderItemModifiers.orderItemId, items[0].id)),
+    );
+    expect(mods).toHaveLength(0); // the old modifier row cascaded away with its item
+  });
+
+  it("does not touch a non-pending item when reconciling", async () => {
+    const { orderId } = await asOrg(orgId, (ctx) =>
+      saveOrder(ctx, {
+        customerId,
+        place: false,
+        items: [{ productId, modifierOptionIds: [], quantity: 2 }],
+      }),
+    );
+    const [item] = await asOrg(orgId, ({ tx }) =>
+      tx.select().from(orderItems).where(eq(orderItems.orderId, orderId)),
+    );
+    await asOrg(orgId, ({ tx }) =>
+      tx.update(orderItems).set({ status: "purchased" }).where(eq(orderItems.id, item.id)),
+    );
+
+    // Resume with an empty set — the purchased line must survive.
+    await asOrg(orgId, (ctx) =>
+      saveOrder(ctx, { orderId, customerId, place: false, items: [] }),
+    );
+
+    const after = await asOrg(orgId, ({ tx }) =>
+      tx.select().from(orderItems).where(eq(orderItems.orderId, orderId)),
+    );
+    expect(after).toHaveLength(1);
+    expect(after[0].id).toBe(item.id);
+    expect(after[0].status).toBe("purchased");
+  });
+
   it("refuses a customer-less order", async () => {
     await expect(
       asOrg(orgId, (ctx) => saveOrder(ctx, { customerId: "", place: false, items: [] })),
@@ -284,5 +343,66 @@ describe("cancelOrderItem", () => {
       tx.select().from(orderItems).where(eq(orderItems.id, item.id)),
     );
     expect(after.status).toBe("pending");
+  });
+});
+
+describe("deleteDraft", () => {
+  it("hard-deletes a draft and cascades its items", async () => {
+    const { orderId } = await asOrg(orgId, (ctx) =>
+      saveOrder(ctx, {
+        customerId,
+        place: false,
+        items: [{ productId, modifierOptionIds: [optionId], quantity: 1 }],
+      }),
+    );
+
+    await asOrg(orgId, (ctx) => deleteDraft(ctx, { orderId }));
+
+    const orderRows = await asOrg(orgId, ({ tx }) =>
+      tx.select().from(orders).where(eq(orders.id, orderId)),
+    );
+    expect(orderRows).toHaveLength(0);
+    const itemRows = await asOrg(orgId, ({ tx }) =>
+      tx.select().from(orderItems).where(eq(orderItems.orderId, orderId)),
+    );
+    expect(itemRows).toHaveLength(0);
+  });
+
+  it("refuses a placed order", async () => {
+    const { orderId } = await asOrg(orgId, (ctx) =>
+      saveOrder(ctx, {
+        customerId,
+        place: true,
+        items: [{ productId, modifierOptionIds: [], quantity: 1 }],
+      }),
+    );
+    await expect(asOrg(orgId, (ctx) => deleteDraft(ctx, { orderId }))).rejects.toBeInstanceOf(ServiceError);
+  });
+
+  it("refuses a draft whose item the Supplier has started on", async () => {
+    const { orderId } = await asOrg(orgId, (ctx) =>
+      saveOrder(ctx, {
+        customerId,
+        place: false,
+        items: [{ productId, modifierOptionIds: [], quantity: 1 }],
+      }),
+    );
+    const [item] = await asOrg(orgId, ({ tx }) =>
+      tx.select().from(orderItems).where(eq(orderItems.orderId, orderId)),
+    );
+    await asOrg(orgId, ({ tx }) =>
+      tx.update(orderItems).set({ status: "purchased" }).where(eq(orderItems.id, item.id)),
+    );
+
+    await expect(asOrg(orgId, (ctx) => deleteDraft(ctx, { orderId }))).rejects.toBeInstanceOf(ServiceError);
+  });
+
+  it("cannot delete another Organization's draft", async () => {
+    const { orderId } = await asOrg(orgId, (ctx) =>
+      saveOrder(ctx, { customerId, place: false, items: [] }),
+    );
+    await expect(asOrg(otherOrgId, (ctx) => deleteDraft(ctx, { orderId }))).rejects.toBeInstanceOf(ServiceError);
+    const rows = await asOrg(orgId, ({ tx }) => tx.select().from(orders).where(eq(orders.id, orderId)));
+    expect(rows).toHaveLength(1);
   });
 });

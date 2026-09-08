@@ -740,7 +740,7 @@ export function NewOrderWizard({
                     <Field label="Quantity" group>
                       <QtyDial value={qty} onChange={setQty} min={1} />
                     </Field>
-                    <Button full icon="plus" disabled={!allSelected} onClick={commitItem} className="rounded-full shadow-raised">
+                    <Button full icon="shopping-cart" disabled={!allSelected} onClick={commitItem} className="rounded-full shadow-raised">
                       Add item
                     </Button>
                   </div>

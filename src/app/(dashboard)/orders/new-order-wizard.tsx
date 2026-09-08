@@ -908,8 +908,11 @@ export function NewOrderWizard({
             onClick={() => setOrderPanelOpen(true)}
             className="flex w-full items-center justify-between gap-3 rounded-md border border-line-hairline bg-surface-raised px-4 py-3 text-left transition-transform duration-fast ease-standard active:scale-[0.985]"
           >
-            <span className="font-ui text-body-strong text-text-strong">
-              {totalItemCount === 1 ? "Order item" : "Order items"}
+            <span className="flex min-w-0 items-center gap-2.5">
+              <Icon name="list" size={16} className="shrink-0 text-text-muted" />
+              <span className="truncate font-ui text-body-strong text-text-strong">
+                {totalItemCount === 1 ? "Order item" : "Order items"}
+              </span>
             </span>
             <span className="flex items-center gap-3">
               <span className="font-ui text-small text-text-muted [font-variant-numeric:tabular-nums]">{totalItemCount}</span>

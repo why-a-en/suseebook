@@ -2,7 +2,7 @@ import "server-only";
 
 import { and, asc, count, desc, eq, gte, ilike, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import { withCurrentStore } from "@/lib/tenancy";
-import { orders, orderItems, orderItemModifiers, customers, products, modifierOptions } from "@/db/schema";
+import { orders, orderItems, customers } from "@/db/schema";
 import type { OrderRowData } from "./orders-view";
 import type { WizardCustomer } from "./new-order-wizard";
 
@@ -209,50 +209,22 @@ export async function fetchOrdersPage(filters: OrdersFilters, cursor: OrdersCurs
     }
 
     const orderIds = pageRows.map((o) => o.id);
+    // The list needs only each order's item statuses (for the summary line,
+    // and its length as the draft count) — not products or modifier
+    // selections. The wizard fetches a draft's full contents itself.
     const itemRows =
       orderIds.length === 0
         ? []
         : await tx
-            .select({
-              id: orderItems.id,
-              orderId: orderItems.orderId,
-              status: orderItems.status,
-              quantity: orderItems.quantity,
-              productName: products.name,
-              productPrice: products.price,
-            })
+            .select({ orderId: orderItems.orderId, status: orderItems.status })
             .from(orderItems)
-            .innerJoin(products, eq(products.id, orderItems.productId))
-            .where(inArray(orderItems.orderId, orderIds))
-            .orderBy(asc(orderItems.id));
-
-    const itemIds = itemRows.map((r) => r.id);
-    const selectionRows =
-      itemIds.length === 0
-        ? []
-        : await tx
-            .select({ orderItemId: orderItemModifiers.orderItemId, value: modifierOptions.value })
-            .from(orderItemModifiers)
-            .innerJoin(modifierOptions, eq(modifierOptions.id, orderItemModifiers.modifierOptionId))
-            .where(inArray(orderItemModifiers.orderItemId, itemIds));
-
-    const selectionsByItem = new Map<string, string[]>();
-    for (const s of selectionRows) {
-      const list = selectionsByItem.get(s.orderItemId) ?? [];
-      list.push(s.value);
-      selectionsByItem.set(s.orderItemId, list);
-    }
+            .where(inArray(orderItems.orderId, orderIds));
 
     const statusesByOrder = new Map<string, string[]>();
-    const itemsByOrder = new Map<string, { productName: string; price: string | null; selection: string[]; quantity: number }[]>();
     for (const row of itemRows) {
       const statuses = statusesByOrder.get(row.orderId) ?? [];
       statuses.push(row.status);
       statusesByOrder.set(row.orderId, statuses);
-
-      const items = itemsByOrder.get(row.orderId) ?? [];
-      items.push({ productName: row.productName, price: row.productPrice, selection: selectionsByItem.get(row.id) ?? [], quantity: row.quantity });
-      itemsByOrder.set(row.orderId, items);
     }
 
     const rows = pageRows.map(
@@ -261,14 +233,7 @@ export async function fetchOrdersPage(filters: OrdersFilters, cursor: OrdersCurs
         customerName: order.customerName,
         createdAtLabel: formatOrderDate(order.createdAt),
         itemStatuses: statusesByOrder.get(order.id) ?? [],
-        draft: order.placedAt
-          ? null
-          : {
-              orderId: order.id,
-              customer: { id: order.customerId, name: order.customerName, phone: order.customerPhone, address: order.customerAddress },
-              notes: order.notes ?? "",
-              existingItems: itemsByOrder.get(order.id) ?? [],
-            },
+        isDraft: order.placedAt === null,
       }),
     );
 

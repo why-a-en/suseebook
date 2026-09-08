@@ -13,7 +13,6 @@ import { Row } from "@/components/ui/row";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/icon";
 import { dateWindowSentence, type DateWindow } from "@/lib/date-range";
-import type { DraftResume } from "./new-order-wizard";
 import { loadMoreOrdersAction } from "./actions";
 import type { OrdersCursor, OrdersFilters } from "./query";
 
@@ -27,10 +26,14 @@ import type { OrdersCursor, OrdersFilters } from "./query";
 type OrderStatus = "all" | "draft" | "placed";
 
 const STATUS_SEGMENTS: { value: OrderStatus; label: string }[] = [
-  { value: "all", label: "All" },
-  { value: "draft", label: "Draft" },
   { value: "placed", label: "Placed" },
+  { value: "draft", label: "Draft" },
+  { value: "all", label: "All" },
 ];
+
+// Placed is the default view — the finished orders are what the log is
+// mostly for; drafts and "all" are the exceptions you tab to.
+const DEFAULT_STATUS: OrderStatus = "placed";
 
 export interface OrderRowData {
   id: string;
@@ -38,10 +41,11 @@ export interface OrderRowData {
   /** Preformatted on the server — see formatOrderDate in page.tsx. */
   createdAtLabel: string;
   itemStatuses: string[];
-  /** Non-null when the order hasn't been placed yet (placed_at is null) —
-   *  tapping the row resumes the wizard (at /orders/new?draft=<id>) instead
-   *  of opening the detail page. */
-  draft: DraftResume | null;
+  /** True when the order hasn't been placed yet (placed_at is null) —
+   *  tapping the row resumes the wizard (/orders/new?draft=<id>) instead
+   *  of opening the detail page. The wizard fetches the resume payload
+   *  itself; the list only needs this flag and the item count. */
+  isDraft: boolean;
 }
 
 function summarize(statuses: string[]): string {
@@ -90,9 +94,9 @@ export function OrdersView({
     startTransition: startFiltering,
   });
   const [status, setStatus] = useQueryState<OrderStatus>("status", {
-    defaultValue: "all",
-    parse: (v): OrderStatus => (v === "draft" || v === "placed" ? v : "all"),
-    serialize: (v) => (v === "all" ? "" : v),
+    defaultValue: DEFAULT_STATUS,
+    parse: (v): OrderStatus => (v === "draft" || v === "all" ? v : DEFAULT_STATUS),
+    serialize: (v) => (v === DEFAULT_STATUS ? "" : v),
     shallow: false,
     startTransition: startFiltering,
   });
@@ -156,7 +160,7 @@ export function OrdersView({
         />
       </Toolbar>
       <Toolbar className="pt-0">
-        <SegmentedControl options={STATUS_SEGMENTS} value={status} onChange={(v) => setStatus(v === "all" ? null : v)} />
+        <SegmentedControl options={STATUS_SEGMENTS} value={status} onChange={(v) => setStatus(v === DEFAULT_STATUS ? null : v)} />
       </Toolbar>
       {/* The list is the previous filter's result until the server answers.
           Fading it is what distinguishes "no matches" from "not asked yet" —
@@ -166,12 +170,12 @@ export function OrdersView({
         {filtered.length === 0 ? (
           <EmptyState
             icon="receipt"
-            title={q || status !== "all" || dateFiltered ? "No match." : "No orders yet."}
+            title={q || dateFiltered || status === "draft" ? "No match." : "No orders yet."}
             body={
               q
                 ? `No orders under that name${rangeLabel ? " " + rangeLabel : ""}.`
-                : status !== "all"
-                  ? `No ${status} orders${rangeLabel ? " " + rangeLabel : ""}.`
+                : status === "draft"
+                  ? `No draft orders${rangeLabel ? " " + rangeLabel : ""}.`
                   : rangeLabel
                     ? `No orders ${rangeLabel}.`
                     : "Log the first one from a customer chat."
@@ -179,11 +183,13 @@ export function OrdersView({
           />
         ) : (
           filtered.map((order) => (
-            <Row key={order.id} href={order.draft ? `/orders/new?draft=${order.id}` : `/orders/${order.id}`} className="min-h-[62px]">
+            <Row key={order.id} href={order.isDraft ? `/orders/new?draft=${order.id}` : `/orders/${order.id}`} className="min-h-[62px]">
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-ui text-body-strong text-text-strong">{order.customerName}</span>
                 <span className="mt-0.5 block truncate font-ui text-small text-text-faint">
-                  {order.draft ? `Draft — ${order.draft.existingItems.length} items` : summarize(order.itemStatuses)}
+                  {order.isDraft
+                    ? `Draft — ${order.itemStatuses.length} item${order.itemStatuses.length === 1 ? "" : "s"}`
+                    : summarize(order.itemStatuses)}
                 </span>
               </span>
               {/* When the order was logged, not what state it's in — the

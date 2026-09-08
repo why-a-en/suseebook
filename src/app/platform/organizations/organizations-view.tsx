@@ -139,7 +139,7 @@ function NewOrgForm({ onDone }: { onDone: () => void }) {
             <Input name="adminName" autoComplete="off" placeholder="Aung Aung" />
           </Field>
           <Field label="First Admin — email" required>
-            <Input name="adminEmail" type="email" autoComplete="off" icon="at-sign" />
+            <Input name="adminEmail" type="email" autoComplete="off" icon="at-sign" placeholder="name@example.com" />
           </Field>
           {state?.error && <p className="font-ui text-small text-danger">{state.error}</p>}
         </SheetBody>

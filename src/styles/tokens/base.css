@@ -73,6 +73,7 @@ svg.lucide {
   position: absolute;
   inset: 0;
   pointer-events: none;
+  color: var(--pattern-grain-ink, currentColor);
   background-image: var(--pattern-grain);
   background-size: var(--pattern-grain-size);
   opacity: var(--pattern-grain-opacity);
@@ -89,6 +90,7 @@ svg.lucide {
   z-index: -1;
   pointer-events: none;
   border-radius: inherit;
+  color: var(--pattern-grain-ink, currentColor);
   background-image: var(--pattern-grain);
   background-size: var(--pattern-grain-size);
   opacity: var(--pattern-grain-opacity);

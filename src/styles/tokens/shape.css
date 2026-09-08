@@ -43,9 +43,10 @@
      texture, not signal — never encode meaning in it. The grain is the one
      pattern that DIFFERS by theme, because the two themes are different
      materials: paper takes a halftone dot, charcoal takes a fine weave (a dot
-     raster on a dark surface reads as dust or dead pixels). Both are drawn in
-     currentColor at a deliberately low opacity — see the theme blocks in
-     colors.css for the per-theme values. */
+     raster on a dark surface reads as dust or dead pixels). The dark weave is
+     drawn in currentColor; the light dot uses a fixed --pattern-grain-ink so a
+     darker ink ramp can't amplify it. Both sit at a deliberately low opacity —
+     see the theme blocks in colors.css for the per-theme values. */
   --pattern-hatch:       repeating-linear-gradient(45deg, currentColor 0 1px, transparent 1px 5px);
   --pattern-hatch-loose: repeating-linear-gradient(45deg, currentColor 0 1px, transparent 1px 8px);
   --pattern-raster:      radial-gradient(currentColor 0.5px, transparent 0.6px);

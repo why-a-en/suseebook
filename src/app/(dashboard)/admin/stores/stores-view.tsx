@@ -75,7 +75,7 @@ function AddStoreForm({ onDone }: { onDone: () => void }) {
       <SheetHeader title="Add store" />
       <SheetBody className="grid gap-4">
         <Field label="Name" required>
-          <Input name="name" autoComplete="off" placeholder="e.g. Yangon Downtown" />
+          <Input name="name" autoComplete="off" placeholder="Yangon Downtown" />
         </Field>
         {state?.error && <p className="font-ui text-small text-danger">{state.error}</p>}
       </SheetBody>

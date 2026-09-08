@@ -35,7 +35,15 @@ export function EmptyState({
           <Icon name={icon} size={20} />
         </EmptyMedia>
         <EmptyTitle className="font-display text-display-sm tracking-display text-text-strong">{title}</EmptyTitle>
-        {body ? <EmptyDescription className="max-w-[260px] font-ui text-small text-text-muted">{body}</EmptyDescription> : null}
+        {body ? (
+          // `overflow-wrap:anywhere` (not just `break-word`): several call
+          // sites drop a user-typed search term into the body, and a long
+          // unbroken one would otherwise blow past max-width and force the
+          // scroll region wider than the screen.
+          <EmptyDescription className="max-w-[260px] [overflow-wrap:anywhere] font-ui text-small text-text-muted">
+            {body}
+          </EmptyDescription>
+        ) : null}
       </EmptyHeader>
       {action ? <EmptyContent className="mt-1.5">{action}</EmptyContent> : null}
     </Empty>

@@ -69,6 +69,12 @@ function formatPrice(price: string | null): string | undefined {
   return `${Number(price).toLocaleString()} MMK`;
 }
 
+/** The typed query, echoed back in a "no match" line — capped so a long one
+ *  doesn't turn the empty state into a wall of text. */
+function clipQuery(q: string): string {
+  return q.length > 24 ? `${q.slice(0, 24).trimEnd()}…` : q;
+}
+
 /** How many products the picker lists before you type.
  *
  *  Products, unlike customers, arrive complete — the route fetches every
@@ -524,7 +530,7 @@ export function NewOrderWizard({
           <EmptyState
             icon="users"
             title="No match."
-            body={`Nobody called “${customerQ}”. Add them with the + above.`}
+            body={`Nobody called “${clipQuery(customerQ)}”. Add them with the + above.`}
           />
         ) : null}
         {hiddenMatchCount > 0 ? (
@@ -692,7 +698,7 @@ export function NewOrderWizard({
           <EmptyState
             icon="package"
             title="No match."
-            body={`Nothing in the catalog called “${productQuery}”. Add it with the + above.`}
+            body={`Nothing in the catalog called “${clipQuery(productQuery.trim())}”. Add it with the + above.`}
           />
         ) : null}
         {allProducts.length ? (

@@ -98,7 +98,7 @@ export function CustomersView({ customers }: { customers: CustomerRowData[] }) {
                 <Input icon="user" autoComplete="name" placeholder="Aung Aung" value={name} onChange={(e) => setName(e.target.value)} />
               </Field>
               <Field label="Phone" required>
-                <Input icon="phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="09 …" value={phone} onChange={(e) => setPhone(e.target.value)} />
+                <Input icon="phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="09 987 654 321" value={phone} onChange={(e) => setPhone(e.target.value)} />
               </Field>
               <Field label="Address" required hint="Needed to ship the parcel once it arrives.">
                 <Textarea icon="map-pin" rows={2} autoComplete="street-address" placeholder="House, street, township, city" value={address} onChange={(e) => setAddress(e.target.value)} />

@@ -386,7 +386,7 @@ export function NewOrderWizard({
           <Input icon="user" autoComplete="name" placeholder="Aung Aung" value={newCustomerName} onChange={(e) => setNewCustomerName(e.target.value)} />
         </Field>
         <Field label="Phone" required>
-          <Input icon="phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="09 …" value={newCustomerPhone} onChange={(e) => setNewCustomerPhone(e.target.value)} />
+          <Input icon="phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="09 987 654 321" value={newCustomerPhone} onChange={(e) => setNewCustomerPhone(e.target.value)} />
         </Field>
         <Field label="Address" required hint="Needed to ship the parcel once it arrives.">
           <Textarea icon="map-pin" rows={2} autoComplete="street-address" placeholder="House, street, township, city" value={newCustomerAddress} onChange={(e) => setNewCustomerAddress(e.target.value)} />

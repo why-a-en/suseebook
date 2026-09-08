@@ -2,7 +2,7 @@
 
 import { useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
 import { cn } from "@/lib/utils";
-import { Icon } from "@/components/icon";
+import { Icon, type IconName } from "@/components/icon";
 import { useFieldControlId, useFieldRequired } from "@/components/ui/field";
 import { fieldShellWrapper } from "@/components/ui/field-shell";
 
@@ -23,6 +23,7 @@ export function TagInput({
   onChange,
   name,
   placeholder,
+  icon,
   id,
   disabled,
   invalid,
@@ -32,6 +33,7 @@ export function TagInput({
   onChange?: (next: string[]) => void;
   name?: string;
   placeholder?: string;
+  icon?: IconName;
   id?: string;
   disabled?: boolean;
   invalid?: boolean;
@@ -93,11 +95,16 @@ export function TagInput({
     }
   }
 
-  return (
+  const shell = (
     <div
       className={cn(
+        // Same shell as Input — border, sunken fill, focus-on-wrapper, the
+        // --control-h-md floor and rounded-sm corners — so an empty TagInput
+        // is indistinguishable from an empty <Input>. It only grows, and
+        // wraps, once chips are in it.
         fieldShellWrapper,
-        "h-auto min-h-(--control-h-md) flex-wrap content-center gap-1.5 rounded-sm px-2 py-1.5",
+        "h-auto min-h-(--control-h-md) flex-wrap content-center gap-1.5 rounded-sm py-1.5",
+        icon ? "pr-3 pl-9" : "px-3",
         disabled && "opacity-55",
         className,
       )}
@@ -139,6 +146,20 @@ export function TagInput({
         className="h-7 min-w-[8ch] flex-1 border-none bg-transparent font-ui text-body text-text-strong outline-none placeholder:text-text-faint"
       />
       {name ? <input type="hidden" name={name} value={tags.join(",")} /> : null}
+    </div>
+  );
+
+  if (!icon) return shell;
+
+  // Icon pinned to the first row, not laid out — the box wraps and grows,
+  // and a glyph flex-centred in a three-row box floats beside nothing. Same
+  // treatment, and the same 13px offset, as Textarea's leading icon.
+  return (
+    <div className="relative grid">
+      <span aria-hidden="true" className="pointer-events-none absolute top-[13px] left-3 text-text-faint">
+        <Icon name={icon} size={16} />
+      </span>
+      {shell}
     </div>
   );
 }

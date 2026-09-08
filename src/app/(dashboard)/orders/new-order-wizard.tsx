@@ -588,7 +588,7 @@ export function NewOrderWizard({
           <Input icon="package" autoComplete="off" placeholder="Denim jacket" value={newProductName} onChange={(e) => setNewProductName(e.target.value)} />
         </Field>
         <Field label="Description" required>
-          <Textarea icon="align-left" rows={2} placeholder="Colour, fabric, fit — anything the customer should know" value={newProductDescription} onChange={(e) => setNewProductDescription(e.target.value)} />
+          <Textarea icon="align-left" rows={3} placeholder="Colour, fabric, fit — anything the customer should know" value={newProductDescription} onChange={(e) => setNewProductDescription(e.target.value)} />
         </Field>
         <Field label="Source URL" hint="Link to the exact Lazada/TikTok Shop listing.">
           <Input
@@ -634,6 +634,7 @@ export function NewOrderWizard({
           </Field>
           <Field label="Options" hint="Press Enter after each">
             <TagInput
+              icon="list"
               placeholder="Black, White, Red"
               value={newProductModifierOptions}
               onChange={setNewProductModifierOptions}

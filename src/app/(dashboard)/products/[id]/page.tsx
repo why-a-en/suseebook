@@ -174,7 +174,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
                   <Input name="modifierName" icon="tag" autoComplete="off" placeholder="Colour" />
                 </Field>
                 <Field label="Options" required hint="Press Enter after each">
-                  <TagInput name="options" placeholder="Black, White, Red" />
+                  <TagInput name="options" icon="list" placeholder="Black, White, Red" />
                 </Field>
                 <Button full type="submit" icon="check">
                   Create and attach

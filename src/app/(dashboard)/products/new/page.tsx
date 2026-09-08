@@ -46,7 +46,7 @@ export default function NewProductPage() {
               <Input name="modifierName" icon="tag" autoComplete="off" placeholder="Colour" />
             </Field>
             <Field label="Options" hint="Press Enter after each">
-              <TagInput name="modifierOptions" placeholder="Black, White, Red" />
+              <TagInput name="modifierOptions" icon="list" placeholder="Black, White, Red" />
             </Field>
           </div>
 

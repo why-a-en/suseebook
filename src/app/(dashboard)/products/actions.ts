@@ -127,7 +127,7 @@ export async function createProductInlineAction(input: {
   price?: string;
   sourceUrl?: string;
   modifierName?: string;
-  modifierOptions?: string;
+  modifierOptions?: string[];
 }): Promise<{
   id: string;
   name: string;
@@ -140,8 +140,7 @@ export async function createProductInlineAction(input: {
   const price = input.price?.trim() || null;
   const sourceUrl = input.sourceUrl?.trim() || null;
   const modifierName = input.modifierName?.trim() ?? "";
-  const modifierOptionValues = (input.modifierOptions ?? "")
-    .split(",")
+  const modifierOptionValues = (input.modifierOptions ?? [])
     .map((v) => v.trim())
     .filter(Boolean);
 

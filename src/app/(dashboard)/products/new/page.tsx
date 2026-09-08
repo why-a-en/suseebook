@@ -2,6 +2,7 @@ import { Screen, ScrollBody } from "@/components/ui/screen";
 import { TopBar } from "@/components/ui/top-bar";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { TagInput } from "@/components/ui/tag-input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { ImageUploadField } from "@/components/image-upload-field";
@@ -35,12 +36,17 @@ export default function NewProductPage() {
           </Field>
 
           <div className="grid gap-4 rounded-md border border-line-hairline p-3">
-            <span className="font-mono text-label tracking-label uppercase text-text-faint">Modifier (optional)</span>
+            <div className="grid gap-1">
+              <span className="font-mono text-label tracking-label uppercase text-text-faint">Modifier (optional)</span>
+              <p className="font-ui text-small text-text-faint">
+                One thing that varies, and the choices for it. The team picks one when adding this product to an order.
+              </p>
+            </div>
             <Field label="Name" hint="What varies — size, colour, material">
               <Input name="modifierName" icon="tag" autoComplete="off" placeholder="Colour" />
             </Field>
-            <Field label="Options" hint="Comma-separated">
-              <Input name="modifierOptions" icon="list" autoComplete="off" placeholder="Black, White, Red" />
+            <Field label="Options" hint="Press Enter after each">
+              <TagInput name="modifierOptions" placeholder="Black, White, Red" />
             </Field>
           </div>
 

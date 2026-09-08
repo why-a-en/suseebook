@@ -12,6 +12,7 @@ import { Screen, ScrollBody } from "@/components/ui/screen";
 import { TopBar } from "@/components/ui/top-bar";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { TagInput } from "@/components/ui/tag-input";
 import { CheckboxField } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -172,8 +173,8 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
                 <Field label="Name" required hint="What varies — size, colour, material">
                   <Input name="modifierName" icon="tag" autoComplete="off" placeholder="Colour" />
                 </Field>
-                <Field label="Options" required hint="Comma-separated">
-                  <Input name="options" icon="list" autoComplete="off" placeholder="Black, White, Red" />
+                <Field label="Options" required hint="Press Enter after each">
+                  <TagInput name="options" placeholder="Black, White, Red" />
                 </Field>
                 <Button full type="submit" icon="check">
                   Create and attach

@@ -7,6 +7,7 @@ import { TopBar } from "@/components/ui/top-bar";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { TagInput } from "@/components/ui/tag-input";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchField } from "@/components/ui/search-field";
 import { OptionChips } from "@/components/ui/option-chips";
@@ -205,7 +206,7 @@ export function NewOrderWizard({
   // red one in size M" while it's being asked for. A second Modifier is
   // catalog work for the product's own page.
   const [newProductModifierName, setNewProductModifierName] = useState("");
-  const [newProductModifierOptions, setNewProductModifierOptions] = useState("");
+  const [newProductModifierOptions, setNewProductModifierOptions] = useState<string[]>([]);
   // Products created inline during this wizard run. The `products` prop is a
   // server snapshot taken when the route rendered; a product created here
   // has to join the list the Items step is filtering over without a
@@ -337,7 +338,7 @@ export function NewOrderWizard({
         setNewProductPrice("");
         setNewProductSourceUrl("");
         setNewProductModifierName("");
-        setNewProductModifierOptions("");
+        setNewProductModifierOptions([]);
         // Narrow the list to the new product rather than clearing the
         // query. Cleared, it lands wherever the refreshed catalog sorts it —
         // for anything past the third product that is below the fold, with
@@ -616,7 +617,12 @@ export function NewOrderWizard({
             it's created and attached with the product, and the picker that
             opens next lands straight on its options. */}
         <div className="grid gap-4 rounded-md border border-line-hairline p-3">
-          <span className="font-mono text-label tracking-label uppercase text-text-faint">Modifier (optional)</span>
+          <div className="grid gap-1">
+            <span className="font-mono text-label tracking-label uppercase text-text-faint">Modifier (optional)</span>
+            <p className="font-ui text-small text-text-faint">
+              One thing that varies, and its choices — you&rsquo;ll pick one for this line next.
+            </p>
+          </div>
           <Field label="Name" hint="What varies — size, colour, material">
             <Input
               icon="tag"
@@ -626,13 +632,11 @@ export function NewOrderWizard({
               onChange={(e) => setNewProductModifierName(e.target.value)}
             />
           </Field>
-          <Field label="Options" hint="Comma-separated">
-            <Input
-              icon="list"
-              autoComplete="off"
+          <Field label="Options" hint="Press Enter after each">
+            <TagInput
               placeholder="Black, White, Red"
               value={newProductModifierOptions}
-              onChange={(e) => setNewProductModifierOptions(e.target.value)}
+              onChange={setNewProductModifierOptions}
             />
           </Field>
         </div>

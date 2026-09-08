@@ -20,7 +20,18 @@ import { OrderItemRow } from "@/components/ui/order-item-row";
 import { SectionHeader } from "@/components/ui/section-header";
 import { Sheet, SheetContent, SheetHeader, SheetBody, SheetFooter } from "@/components/ui/sheet";
 import { ErrorDialog } from "@/components/ui/error-dialog";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogBody,
+  AlertDialogFooter,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogCancel,
+} from "@/components/ui/alert-dialog";
 import { Icon } from "@/components/icon";
+import { armNavigationGuard, disarmNavigationGuard } from "@/lib/navigation-guard";
 import { createProductInlineAction } from "@/app/(dashboard)/products/actions";
 import { createCustomerAction, saveOrderAction, searchCustomersAction } from "./actions";
 
@@ -173,14 +184,16 @@ function StepIndicator({
  *  product-configuration sub-step is substantial enough to want the full
  *  screen and a real URL, not a modal stacked over the Orders list. Review
  *  is purely a client-side summary — nothing new to fetch or save, it just
- *  holds the actual commit actions ("Place order" / "Save as draft") behind
- *  one more confirmation once there's something to confirm. "Save draft"
- *  writes the order as-is (placed_at stays null) and returns to the list —
- *  it'll show up there to resume later (tap it — see orders-view.tsx linking
- *  to `/orders/new?draft=<id>`, which reopens this straight at the Items
- *  step via the `resume` prop, same as before Review existed). "Place order"
- *  is the same action with `place: true`, which also redirects to the order
- *  detail page. */
+ *  holds "Place order" (`saveOrderAction` with `place: true`, which redirects
+ *  to the order detail page).
+ *
+ *  Nothing is written until then. Leaving the wizard with unsaved work —
+ *  the top-bar back, the tab bar (guarded via src/lib/navigation-guard), a
+ *  refresh — prompts to "Save as draft" first. That's the only way a draft
+ *  is created now: an interrupted order, not a deliberate lesser one. A
+ *  draft is the order as-is with `placed_at` null; it shows in the Orders
+ *  list and reopens here via `/orders/new?draft=<id>` (the `resume` prop),
+ *  landing straight on Items. */
 export function NewOrderWizard({
   customers,
   customerTotal,
@@ -228,6 +241,10 @@ export function NewOrderWizard({
   // The Items step's order list lives in a sheet behind a pinned bar, so the
   // catalog keeps the whole screen no matter how long the order gets.
   const [cartOpen, setCartOpen] = useState(false);
+  // Where a blocked navigation was trying to go — non-null means the
+  // "leave without saving?" dialog is open. "" stands for "just close the
+  // dialog" cases that shouldn't be reachable.
+  const [leaveTo, setLeaveTo] = useState<string | null>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -309,6 +326,19 @@ export function NewOrderWizard({
     if (price == null) hasUnpricedItem = true;
     else priceTotal += Number(price) * line.quantity;
   }
+
+  // Is there work that would be lost by leaving? A fresh order is dirty once
+  // a customer is picked or anything is typed; a resumed draft only once
+  // it's been added to or its notes edited beyond what was saved. Never
+  // while a save is already in flight.
+  const dirty =
+    !isPending &&
+    (cart.length > 0 ||
+      (resume
+        ? notes.trim() !== (resume.notes ?? "").trim()
+        : customer !== null || notes.trim().length > 0));
+  // A draft still needs a customer to save against.
+  const canSaveDraft = customer !== null;
 
   function handleCreateCustomer() {
     setError(null);
@@ -425,6 +455,43 @@ export function NewOrderWizard({
     if (next.length === 0 && existingItems.length === 0) setCartOpen(false);
   }
 
+  // Every path out of the wizard that isn't "Place order" goes through here:
+  // the top-bar back, the Items step's Previous when resuming, and (via the
+  // guard armed below) the tab bar. If there's unsaved work it opens the
+  // dialog instead of navigating; otherwise it just goes.
+  function leaveWizard(destination: string) {
+    if (dirty) setLeaveTo(destination);
+    else router.push(destination);
+  }
+
+  // While there's unsaved work, arm the shared guard (catches the tab bar's
+  // Links) and the browser's own unload prompt (catches refresh / close /
+  // hard navigation, where only the native dialog is possible).
+  useEffect(() => {
+    if (!dirty) return;
+    const onLeave = (destination: string | null) => setLeaveTo(destination ?? "/orders");
+    armNavigationGuard(onLeave);
+    const onBeforeUnload = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => {
+      disarmNavigationGuard(onLeave);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+    };
+  }, [dirty]);
+
+  function discardAndLeave() {
+    const destination = leaveTo ?? "/orders";
+    setLeaveTo(null);
+    // router.push doesn't route through the Link guard, so this isn't
+    // re-caught; the guard is torn down by the effect cleanup on unmount.
+    router.push(destination);
+  }
+
+  function saveDraftAndLeave() {
+    setLeaveTo(null);
+    handleSave(false); // writes the draft, then routes to /orders itself
+  }
+
   // Free movement between steps, driven by the progress indicator. Only the
   // two data-entry sub-steps are torn down; every field of wizard state —
   // the chosen customer, the cart, the notes, a half-typed new customer or
@@ -473,10 +540,10 @@ export function NewOrderWizard({
 
   let title = "New order";
   let eyebrow = "Customer";
-  // Default (the Customer step's search view): there's nothing behind
-  // Customer inside the wizard, so back leaves the route for the Orders
-  // list. Every other step reassigns this to step within the wizard.
-  let onBack: (() => void) | undefined = () => router.push("/orders");
+  // The top-bar back leaves the wizard for the Orders list, from every step —
+  // stepping backwards is the footer's "Previous" and the progress indicator.
+  // The two data-entry sub-steps override this to close themselves instead.
+  let onBack: (() => void) | undefined = () => leaveWizard("/orders");
   let body;
   let footer;
 
@@ -606,12 +673,9 @@ export function NewOrderWizard({
   } else if (step === "items") {
     title = customer?.name ?? "Items";
     eyebrow = "Items";
-    // Top-bar back mirrors the footer: out of the product sub-step if it's
-    // open, otherwise one wizard step back to Customer (or out to the Orders
-    // list for a resumed draft, which has no Customer step to return to).
-    onBack = addingProduct
-      ? () => setAddingProduct(false)
-      : () => (resume ? router.push("/orders") : setStep("customer"));
+    // Product sub-step closes itself; otherwise the default (leave the
+    // wizard) stands.
+    if (addingProduct) onBack = () => setAddingProduct(false);
     body = addingProduct ? (
       // Same shape as the Customer step's inline create: the step's body
       // becomes the form and its footer becomes Back / Create, rather than a
@@ -799,16 +863,13 @@ export function NewOrderWizard({
           </button>
         ) : null}
         <div className="flex gap-2">
-          <Button variant="secondary" icon="arrow-left" onClick={() => (resume ? router.push("/orders") : setStep("customer"))}>
+          <Button variant="secondary" icon="arrow-left" onClick={() => (resume ? leaveWizard("/orders") : setStep("customer"))}>
             Previous
           </Button>
           <Button full iconAfter="chevron-right" disabled={!totalItemCount} onClick={() => setStep("review")} className="flex-1 rounded-full shadow-raised">
             Review order
           </Button>
         </div>
-        <Button full variant="secondary" icon="clock" disabled={isPending} onClick={() => handleSave(false)}>
-          Save as draft
-        </Button>
       </div>
     );
   } else {
@@ -816,7 +877,8 @@ export function NewOrderWizard({
     // (existingItems + cart + notes); nothing here has been saved yet.
     title = customer?.name ?? "Review";
     eyebrow = "Review";
-    onBack = () => setStep("items");
+    // Top-bar back leaves the wizard (default); "Previous" in the footer is
+    // the way back to Items.
     body = (
       <div className="grid gap-3">
         <div className="min-w-0">
@@ -854,17 +916,12 @@ export function NewOrderWizard({
       </div>
     );
     footer = (
-      <div className="grid gap-2">
-        <div className="flex gap-2">
-          <Button variant="secondary" icon="arrow-left" onClick={() => setStep("items")}>
-            Previous
-          </Button>
-          <Button full icon="check" disabled={!totalItemCount || isPending} onClick={() => handleSave(true)} className="flex-1 rounded-full shadow-raised">
-            {isPending ? "Saving…" : "Place order"}
-          </Button>
-        </div>
-        <Button full variant="secondary" icon="clock" disabled={isPending} onClick={() => handleSave(false)}>
-          Save as draft
+      <div className="flex gap-2">
+        <Button variant="secondary" icon="arrow-left" onClick={() => setStep("items")}>
+          Previous
+        </Button>
+        <Button full icon="check" disabled={!totalItemCount || isPending} onClick={() => handleSave(true)} className="flex-1 rounded-full shadow-raised">
+          {isPending ? "Saving…" : "Place order"}
         </Button>
       </div>
     );
@@ -885,6 +942,32 @@ export function NewOrderWizard({
       </ScrollBody>
       {footer ? <Foot padded>{footer}</Foot> : null}
       <ErrorDialog open={!!error} message={error} onOk={() => setError(null)} />
+
+      <AlertDialog open={leaveTo !== null} onOpenChange={(open) => !open && setLeaveTo(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Leave without placing the order?</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogBody>
+            <AlertDialogDescription>
+              {canSaveDraft
+                ? "Nothing here is saved yet. Save it as a draft to finish later, or leave and lose it."
+                : "Nothing here is saved yet, and there's no customer to save a draft against — leaving now loses it."}
+            </AlertDialogDescription>
+          </AlertDialogBody>
+          <AlertDialogFooter className="grid gap-2">
+            {canSaveDraft ? (
+              <Button full icon="clock" disabled={isPending} onClick={saveDraftAndLeave}>
+                Save as draft
+              </Button>
+            ) : null}
+            <Button full variant="danger" onClick={discardAndLeave}>
+              Discard and leave
+            </Button>
+            <AlertDialogCancel>Keep editing</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Sheet open={cartOpen} onOpenChange={setCartOpen}>
         <SheetContent>

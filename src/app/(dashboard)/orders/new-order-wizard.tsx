@@ -18,6 +18,7 @@ import { CustomerRow } from "@/components/ui/customer-row";
 import { ProductRow } from "@/components/ui/product-row";
 import { OrderItemRow } from "@/components/ui/order-item-row";
 import { SectionHeader } from "@/components/ui/section-header";
+import { Sheet, SheetContent, SheetHeader, SheetBody, SheetFooter } from "@/components/ui/sheet";
 import { ErrorDialog } from "@/components/ui/error-dialog";
 import { Icon } from "@/components/icon";
 import { createProductInlineAction } from "@/app/(dashboard)/products/actions";
@@ -224,6 +225,9 @@ export function NewOrderWizard({
   const [picking, setPicking] = useState<WizardProduct | null>(null);
   const [selections, setSelections] = useState<Record<string, string>>({});
   const [qty, setQty] = useState(1);
+  // The Items step's order list lives in a sheet behind a pinned bar, so the
+  // catalog keeps the whole screen no matter how long the order gets.
+  const [cartOpen, setCartOpen] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -408,6 +412,17 @@ export function NewOrderWizard({
     setPicking(null);
     setSelections({});
     setQty(1);
+  }
+
+  function setCartLineQty(key: string, quantity: number) {
+    setCart((prev) => prev.map((line) => (line.key === key ? { ...line, quantity } : line)));
+  }
+
+  function removeCartLine(key: string) {
+    const next = cart.filter((line) => line.key !== key);
+    setCart(next);
+    // Nothing left to show — a resumed draft's own items keep it relevant.
+    if (next.length === 0 && existingItems.length === 0) setCartOpen(false);
   }
 
   // Free movement between steps, driven by the progress indicator. Only the
@@ -666,22 +681,10 @@ export function NewOrderWizard({
       </div>
     ) : (
       <div className="grid gap-3">
-        {/* The order so far — just its items. The order-level Notes field
-            lives on Review: this step is already carrying the running list,
-            the search, and inline product creation, and a notes box wedged
-            between the list and the search read as a note about whatever the
-            search had just turned up. */}
-        {totalItemCount ? (
-          <div className="min-w-0">
-            <SectionHeader right={`${totalItemCount} items`}>On this order</SectionHeader>
-            {existingItems.map((line, i) => (
-              <OrderItemRow key={`existing-${i}`} product={line.productName} selection={line.selection} qty={line.quantity} status="Pending" />
-            ))}
-            {cart.map((line) => (
-              <OrderItemRow key={line.key} product={line.productName} selection={line.selection} qty={line.quantity} status="Pending" />
-            ))}
-          </div>
-        ) : null}
+        {/* Just the catalog. What's already on the order lives in a sheet
+            behind the pinned bar in the footer, so adding the 12th item
+            doesn't mean scrolling past the first 11 — and Notes lives on
+            Review. This step is only "find and add products". */}
 
         {/* Search and "new product" are one row: the moment you find out a
             product isn't in the catalog is the moment you want to add it,
@@ -775,6 +778,26 @@ export function NewOrderWizard({
       </div>
     ) : (
       <div className="grid gap-2">
+        {totalItemCount ? (
+          <button
+            type="button"
+            onClick={() => setCartOpen(true)}
+            aria-label="Open the order"
+            className="flex items-center justify-between gap-2 rounded-full border border-line-hairline bg-surface-raised px-4 py-2.5 font-ui text-small-strong text-text-strong transition-transform duration-fast ease-standard active:scale-[0.985]"
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              <Icon name="shopping-cart" size={16} className="shrink-0 text-text-muted" />
+              <span className="truncate">
+                {totalItemCount} item{totalItemCount === 1 ? "" : "s"}
+                <span className="text-text-faint"> · </span>
+                <span className="[font-variant-numeric:tabular-nums]">
+                  {priceTotal.toLocaleString()} MMK{hasUnpricedItem ? "+" : ""}
+                </span>
+              </span>
+            </span>
+            <Icon name="chevron-up" size={16} className="shrink-0 text-text-faint" />
+          </button>
+        ) : null}
         <div className="flex gap-2">
           <Button variant="secondary" icon="arrow-left" onClick={() => (resume ? router.push("/orders") : setStep("customer"))}>
             Previous
@@ -862,6 +885,48 @@ export function NewOrderWizard({
       </ScrollBody>
       {footer ? <Foot padded>{footer}</Foot> : null}
       <ErrorDialog open={!!error} message={error} onOk={() => setError(null)} />
+
+      <Sheet open={cartOpen} onOpenChange={setCartOpen}>
+        <SheetContent>
+          <SheetHeader title="On this order" eyebrow={`${totalItemCount} item${totalItemCount === 1 ? "" : "s"}`} />
+          <SheetBody className="grid gap-0">
+            {existingItems.map((line, i) => (
+              <div key={`existing-${i}`} className="flex items-center gap-3 border-b border-line-hairline py-3 last:border-b-0">
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-ui text-body-strong text-text-strong">{line.productName}</span>
+                  {line.selection.length ? (
+                    <span className="block truncate font-ui text-small text-text-muted">{line.selection.join(" · ")}</span>
+                  ) : null}
+                </span>
+                {/* Already saved on the draft — not editable from here. */}
+                <span className="shrink-0 font-ui text-small text-text-faint [font-variant-numeric:tabular-nums]">×{line.quantity}</span>
+              </div>
+            ))}
+            {cart.map((line) => (
+              <div key={line.key} className="flex items-center gap-2 border-b border-line-hairline py-3 last:border-b-0">
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-ui text-body-strong text-text-strong">{line.productName}</span>
+                  {line.selection.length ? (
+                    <span className="block truncate font-ui text-small text-text-muted">{line.selection.join(" · ")}</span>
+                  ) : null}
+                </span>
+                <QtyDial value={line.quantity} onChange={(n) => setCartLineQty(line.key, n)} min={1} className="shrink-0" />
+                <IconButton icon="x" label={`Remove ${line.productName}`} size="icon-sm" onClick={() => removeCartLine(line.key)} className="shrink-0" />
+              </div>
+            ))}
+          </SheetBody>
+          <SheetFooter>
+            <div className="flex items-baseline justify-between">
+              <span className="font-ui text-body-strong text-text-strong">Total</span>
+              <span className="font-ui text-body-strong text-text-strong [font-variant-numeric:tabular-nums]">
+                {priceTotal.toLocaleString()} MMK{hasUnpricedItem ? "+" : ""}
+              </span>
+            </div>
+            {/* The trailing "+" is the whole story here; the sentence
+                spelling it out lives on Review, where there's room. */}
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </Screen>
   );
 }

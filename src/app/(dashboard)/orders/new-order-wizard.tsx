@@ -33,7 +33,7 @@ import { Icon } from "@/components/icon";
 import { armNavigationGuard, disarmNavigationGuard } from "@/lib/navigation-guard";
 import { cn } from "@/lib/utils";
 import { createProductInlineAction } from "@/app/(dashboard)/products/actions";
-import { createCustomerAction, saveOrderAction, searchCustomersAction } from "./actions";
+import { createCustomerAction, deleteDraftAction, saveOrderAction, searchCustomersAction } from "./actions";
 
 export interface WizardCustomer {
   id: string;
@@ -57,18 +57,20 @@ export interface WizardProduct {
 }
 
 /** A saved-but-not-placed Order — resuming it reopens the wizard straight
- *  at the Items step with its customer and whatever was already added. */
+ *  at the Items step with its customer and its still-pending items, all
+ *  editable. Saving reconciles them (see saveOrder). */
 export interface DraftResume {
   orderId: string;
   customer: WizardCustomer;
   notes: string;
-  existingItems: { productName: string; price: string | null; selection: string[]; quantity: number }[];
+  items: { productId: string; productName: string; price: string | null; selection: string[]; modifierOptionIds: string[]; quantity: number }[];
 }
 
 interface CartLine {
   key: string;
   productId: string;
   productName: string;
+  price: string | null;
   selection: string[];
   modifierOptionIds: string[];
   quantity: number;
@@ -85,6 +87,16 @@ function formatPrice(price: string | null): string | undefined {
  *  doesn't turn the empty state into a wall of text. */
 function clipQuery(q: string): string {
   return q.length > 24 ? `${q.slice(0, 24).trimEnd()}…` : q;
+}
+
+/** Order-independent fingerprint of the cart — product + option set +
+ *  quantity per line. Used to tell whether a resumed draft has actually
+ *  been changed. */
+function cartSignature(lines: CartLine[]): string {
+  return lines
+    .map((l) => `${l.productId}:${[...l.modifierOptionIds].sort().join(",")}:${l.quantity}`)
+    .sort()
+    .join("|");
 }
 
 /** One line of the order — the same shape in the panel and on Review. Name
@@ -286,7 +298,12 @@ export function NewOrderWizard({
   // navigation, or the thing you just made isn't there to add.
   const [extraProducts, setExtraProducts] = useState<WizardProduct[]>([]);
 
-  const [cart, setCart] = useState<CartLine[]>([]);
+  // Resuming a draft hydrates its pending items straight into the cart —
+  // there's no separate "already saved" list; everything here is editable.
+  const hydrateResumedCart = () =>
+    (resume?.items ?? []).map((it, i): CartLine => ({ key: `resumed-${i}`, ...it }));
+  const [cart, setCart] = useState<CartLine[]>(hydrateResumedCart);
+  const [initialCartSig] = useState(() => cartSignature(hydrateResumedCart()));
   const [notes, setNotes] = useState(resume?.notes ?? "");
   const [picking, setPicking] = useState<WizardProduct | null>(null);
   const [selections, setSelections] = useState<Record<string, string>>({});
@@ -295,6 +312,7 @@ export function NewOrderWizard({
   // footer, so the catalog keeps the whole screen no matter how long the
   // order gets.
   const [orderPanelOpen, setOrderPanelOpen] = useState(false);
+  const [confirmDeleteDraft, setConfirmDeleteDraft] = useState(false);
   // Where a blocked navigation was trying to go — non-null means the
   // "leave without saving?" dialog is open. "" stands for "just close the
   // dialog" cases that shouldn't be reachable.
@@ -363,22 +381,15 @@ export function NewOrderWizard({
   const matchingProducts = allProducts.filter((p) => p.name.toLowerCase().includes(productQuery.toLowerCase()));
   const visibleProducts = productQuery ? matchingProducts : matchingProducts.slice(0, PRODUCT_BROWSE_CAP);
   const hiddenProductCount = matchingProducts.length - visibleProducts.length;
-  const existingItems = resume?.existingItems ?? [];
-  const totalItemCount = existingItems.length + cart.length;
-  // Cart lines only carry a productId, existing (resumed) lines carry their
-  // own price straight from the DB — either way, a null price (product has
-  // none set) can't be assumed to be 0, so it's tracked separately rather
-  // than silently under-totaling.
+  const totalItemCount = cart.length;
+  // Each line carries its own price — a null one (product has none set)
+  // can't be assumed to be 0, so it's tracked separately rather than
+  // silently under-totaling.
   let priceTotal = 0;
   let hasUnpricedItem = false;
-  for (const line of existingItems) {
+  for (const line of cart) {
     if (line.price == null) hasUnpricedItem = true;
     else priceTotal += Number(line.price) * line.quantity;
-  }
-  for (const line of cart) {
-    const price = allProducts.find((p) => p.id === line.productId)?.price;
-    if (price == null) hasUnpricedItem = true;
-    else priceTotal += Number(price) * line.quantity;
   }
   // New products all carry a price now, but the catalog still holds
   // older ones that don't, and a resumed draft can too. With nothing on
@@ -388,15 +399,14 @@ export function NewOrderWizard({
   const totalText = `${priceTotal.toLocaleString()} MMK${hasUnpricedItem ? "+" : ""}`;
 
   // Is there work that would be lost by leaving? A fresh order is dirty once
-  // a customer is picked or anything is typed; a resumed draft only once
-  // it's been added to or its notes edited beyond what was saved. Never
-  // while a save is already in flight.
+  // a customer is picked or anything is typed; a resumed draft once its
+  // items or notes differ from what was saved. Never while a save is
+  // already in flight.
   const dirty =
     !isPending &&
-    (cart.length > 0 ||
-      (resume
-        ? notes.trim() !== (resume.notes ?? "").trim()
-        : customer !== null || notes.trim().length > 0));
+    (resume
+      ? cartSignature(cart) !== initialCartSig || notes.trim() !== (resume.notes ?? "").trim()
+      : cart.length > 0 || customer !== null || notes.trim().length > 0);
   // A draft still needs a customer to save against.
   const canSaveDraft = customer !== null;
 
@@ -493,6 +503,7 @@ export function NewOrderWizard({
           key: `${product.id}-${Date.now()}`,
           productId: product.id,
           productName: product.name,
+          price: product.price,
           selection: product.modifierGroups.map((g) => selections[g.id]).filter(Boolean),
           modifierOptionIds,
           quantity: qty,
@@ -511,8 +522,7 @@ export function NewOrderWizard({
   function removeOrderLine(key: string) {
     const next = cart.filter((line) => line.key !== key);
     setCart(next);
-    // Nothing left to show — a resumed draft's own items keep it relevant.
-    if (next.length === 0 && existingItems.length === 0) setOrderPanelOpen(false);
+    if (next.length === 0) setOrderPanelOpen(false);
   }
 
   /** A line's extended price, formatted, or "—" when the product has no set
@@ -556,6 +566,19 @@ export function NewOrderWizard({
   function saveDraftAndLeave() {
     setLeaveTo(null);
     handleSave(false); // writes the draft, then routes to /orders itself
+  }
+
+  function handleDeleteDraft() {
+    if (!resume) return;
+    setConfirmDeleteDraft(false);
+    setError(null);
+    startTransition(async () => {
+      try {
+        await deleteDraftAction(resume.orderId); // redirects to /orders
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Couldn't delete that draft.");
+      }
+    });
   }
 
   // Free movement between steps, driven by the progress indicator. Only the
@@ -960,24 +983,14 @@ export function NewOrderWizard({
 
         <div className="min-w-0">
           <SectionHeader right={`${totalItemCount} item${totalItemCount === 1 ? "" : "s"}`}>Order</SectionHeader>
-          {[
-            ...existingItems.map((line, i) => ({
-              key: `existing-${i}`,
-              name: line.productName,
-              selection: line.selection,
-              quantity: line.quantity,
-              amount: showAmounts ? lineAmount(line.price, line.quantity) : null,
-            })),
-            ...cart.map((line) => ({
-              key: line.key,
-              name: line.productName,
-              selection: line.selection,
-              quantity: line.quantity,
-              amount: showAmounts ? lineAmount(allProducts.find((p) => p.id === line.productId)?.price ?? null, line.quantity) : null,
-            })),
-          ].map((line) => (
+          {cart.map((line) => (
             <div key={line.key} className="border-b border-line-hairline px-5 py-3 last:border-b-0">
-              <OrderLine name={line.name} options={line.selection} quantity={line.quantity} amount={line.amount} />
+              <OrderLine
+                name={line.productName}
+                options={line.selection}
+                quantity={line.quantity}
+                amount={showAmounts ? lineAmount(line.price, line.quantity) : null}
+              />
             </div>
           ))}
           <div className="flex items-baseline justify-between px-5 pt-3">
@@ -1033,25 +1046,46 @@ export function NewOrderWizard({
       <AlertDialog open={leaveTo !== null} onOpenChange={(open) => !open && setLeaveTo(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Leave without placing the order?</AlertDialogTitle>
+            <AlertDialogTitle>{resume ? "Leave this draft?" : "Leave without placing the order?"}</AlertDialogTitle>
           </AlertDialogHeader>
           <AlertDialogBody>
             <AlertDialogDescription>
-              {canSaveDraft
-                ? "Nothing here is saved yet. Save it as a draft to finish later, or leave and lose it."
-                : "Nothing here is saved yet, and there's no customer to save a draft against — leaving now loses it."}
+              {resume
+                ? "Your changes to this draft aren't saved yet."
+                : canSaveDraft
+                  ? "Nothing here is saved yet. Save it as a draft to finish later, or leave and lose it."
+                  : "Nothing here is saved yet, and there's no customer to save a draft against — leaving now loses it."}
             </AlertDialogDescription>
           </AlertDialogBody>
           <AlertDialogFooter className="grid gap-2">
             {canSaveDraft ? (
               <Button full icon="clock" disabled={isPending} onClick={saveDraftAndLeave}>
-                Save as draft
+                {resume ? "Save changes" : "Save as draft"}
               </Button>
             ) : null}
             <Button full variant="danger" onClick={discardAndLeave}>
-              Discard and leave
+              {resume ? "Leave without saving" : "Discard and leave"}
             </Button>
             <AlertDialogCancel>Keep editing</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={confirmDeleteDraft} onOpenChange={(open) => !open && setConfirmDeleteDraft(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this draft?</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogBody>
+            <AlertDialogDescription>
+              The whole draft and its {totalItemCount} item{totalItemCount === 1 ? "" : "s"} go. This can&rsquo;t be undone.
+            </AlertDialogDescription>
+          </AlertDialogBody>
+          <AlertDialogFooter className="grid gap-2">
+            <Button full variant="danger" disabled={isPending} onClick={handleDeleteDraft}>
+              Delete draft
+            </Button>
+            <AlertDialogCancel>Keep it</AlertDialogCancel>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -1063,42 +1097,36 @@ export function NewOrderWizard({
             {customer ? (
               <p className="pb-2 font-ui text-small text-text-muted">{customer.name}</p>
             ) : null}
-            {/* Lines already saved on the draft — shown for the whole
-                picture, greyed, no editing (that needs a server round-trip). */}
-            {existingItems.map((line, i) => (
-              <div key={`existing-${i}`} className="border-b border-line-hairline py-3 last:border-b-0">
+            {cart.map((line) => (
+              <div key={line.key} className="border-b border-line-hairline py-3 last:border-b-0">
                 <OrderLine
                   name={line.productName}
                   options={line.selection}
                   quantity={line.quantity}
                   amount={showAmounts ? lineAmount(line.price, line.quantity) : null}
-                  muted
+                  control={
+                    // Decrementing off 1 removes the line — no separate
+                    // delete affordance.
+                    <QtyDial
+                      value={line.quantity}
+                      min={0}
+                      onChange={(n) => (n < 1 ? removeOrderLine(line.key) : setOrderLineQty(line.key, n))}
+                    />
+                  }
                 />
               </div>
             ))}
 
-            {cart.map((line) => {
-              const unitPrice = allProducts.find((p) => p.id === line.productId)?.price ?? null;
-              return (
-                <div key={line.key} className="border-b border-line-hairline py-3 last:border-b-0">
-                  <OrderLine
-                    name={line.productName}
-                    options={line.selection}
-                    quantity={line.quantity}
-                    amount={showAmounts ? lineAmount(unitPrice, line.quantity) : null}
-                    control={
-                      // Decrementing off 1 removes the line — no separate
-                      // delete affordance.
-                      <QtyDial
-                        value={line.quantity}
-                        min={0}
-                        onChange={(n) => (n < 1 ? removeOrderLine(line.key) : setOrderLineQty(line.key, n))}
-                      />
-                    }
-                  />
-                </div>
-              );
-            })}
+            {resume ? (
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteDraft(true)}
+                className="mt-5 flex w-full items-center justify-center gap-2 rounded-sm border border-line-strong bg-danger-wash py-2.5 font-ui text-small-strong text-danger transition-transform duration-fast ease-standard active:scale-[0.985]"
+              >
+                <Icon name="x" size={15} />
+                Delete this draft
+              </button>
+            ) : null}
           </SheetBody>
           <SheetFooter className="flex items-baseline justify-between">
             <span className="font-mono text-label tracking-label uppercase text-text-faint">Total</span>

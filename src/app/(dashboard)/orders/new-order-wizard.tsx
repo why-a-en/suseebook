@@ -456,6 +456,10 @@ export function NewOrderWizard({
     // advances), so the footer goes too and the list gets the height back.
     // Back is still a real, equally-weighted button in the sub-step, not the
     // small inline text link it once was.
+    // In the create sub-step, the top-bar back arrow mirrors the footer's
+    // Back: it steps back to the customer search — the wizard's first step —
+    // not out of the wizard to the Orders list.
+    if (addingCustomer) onBack = () => setAddingCustomer(false);
     footer = addingCustomer ? (
       <div className="flex gap-2">
         <Button variant="secondary" icon="arrow-left" onClick={() => setAddingCustomer(false)}>

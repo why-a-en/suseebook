@@ -33,13 +33,13 @@ The mark files have no text and are safe as `<img>` anywhere.
 
 ### Rules
 
-- Wordmark is **Public Sans 800**, 18px on the 24px grid, tracked `-0.7`. "Book"
+- Wordmark is **Public Sans 800**, 18px on the 24px grid, tracked `-0.7`. "OS"
   always takes the accent; "SuSee" always takes the ink colour. (It was Gloock;
   the serif was pulled from the system.)
 - Clear space on all sides = the coin's diameter, 5.7 units on the 24 grid.
 - **Minimum mark size 16px**; minimum lockup width 120px (the lockup's own box is
   120×24 units — it widened from 116 when the wordmark went from "Mini POS" to
-  "SuSeeBook"). Below that, mark alone.
+  "SuSeeOS"). Below that, mark alone.
 - The coin is never any colour but `--accent`, and the `$` never any colour but
   `--accent-ink`.
 - Never fill the cut-out ring — the coin must always read as sitting *in* the

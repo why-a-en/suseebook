@@ -58,7 +58,7 @@ export type SessionUser = {
 };
 
 /**
- * A signed-in **platform operator** — us, the people who run SuSeeBook. A
+ * A signed-in **platform operator** — us, the people who run SuSeeOS. A
  * platform operator has NO tenant footprint: no `members` row, no
  * Organization, no tenant role. They live only under `/platform`, and reach
  * a client's data by impersonating (audited). The allowlist

@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 
-/** The SuSeeBook mark: a rounded, engineered cart in motion with a dollar coin
+/** The SuSeeOS mark: a rounded, engineered cart in motion with a dollar coin
  *  riding inside the basket — product moving, money counted. The coin sits in a
  *  cut-out so it separates on any surface; solid elsewhere so it holds at 16px.
  *  Monochrome — no hue at all. */
@@ -25,7 +25,7 @@ export function Logo({ size = 22, wordmark = false, className }: { size?: number
       </svg>
       {wordmark ? (
         <span className="whitespace-nowrap font-display leading-none tracking-display" style={{ fontSize: size * 0.86 }}>
-          SuSee<span className="text-text-strong">Book</span>
+          SuSee<span className="text-text-strong">OS</span>
         </span>
       ) : null}
     </span>

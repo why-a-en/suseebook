@@ -1,4 +1,4 @@
-// Provisions a platform operator — one of us, who runs SuSeeBook.
+// Provisions a platform operator — one of us, who runs SuSeeOS.
 //
 // An operator is a `users` row + credential account with **NO tenant
 // membership**: no `members` row, no Organization, no tenant role. They live
@@ -8,7 +8,7 @@
 // add the printed id to PLATFORM_ADMIN_USER_IDS (the env is the single
 // source of truth — there is no in-app path to becoming one).
 //
-//   pnpm platform:add ops@suseebook.com "Yan Min" <password>
+//   pnpm platform:add ops@suseeos.com "Yan Min" <password>
 import { config as loadEnv } from "dotenv";
 loadEnv({ path: ".env.local" });
 

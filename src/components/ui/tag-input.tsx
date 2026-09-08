@@ -4,7 +4,7 @@ import { useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react
 import { cn } from "@/lib/utils";
 import { Icon, type IconName } from "@/components/icon";
 import { useFieldControlId, useFieldRequired } from "@/components/ui/field";
-import { fieldShellWrapper } from "@/components/ui/field-shell";
+import { fieldShellInner, fieldShellWrapper } from "@/components/ui/field-shell";
 
 /** Multi-value entry as removable chips — for a set of short strings that a
  *  comma-string `<Input>` handled badly: Modifier Options, mainly. Each
@@ -143,7 +143,12 @@ export function TagInput({
         onKeyDown={onKeyDown}
         onPaste={onPaste}
         onBlur={commitDraft}
-        className="h-7 min-w-[8ch] flex-1 border-none bg-transparent font-ui text-body text-text-strong outline-none placeholder:text-text-faint"
+        // The exact bare-control treatment Input's inner <input> uses —
+        // `shadow-none` is the important part: it kills the global
+        // :focus-visible ring (base.css) that was drawing a second white
+        // outline inside the wrapper on focus. The wrapper owns focus, as
+        // its border reaching --line-focus, same as every other field.
+        className={cn(fieldShellInner, "h-7 min-w-[8ch] text-text-strong")}
       />
       {name ? <input type="hidden" name={name} value={tags.join(",")} /> : null}
     </div>

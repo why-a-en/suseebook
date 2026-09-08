@@ -753,16 +753,7 @@ export function NewOrderWizard({
         <Field label="Description" required>
           <Textarea rows={3} placeholder="Colour, fabric, fit — anything the customer should know" value={newProductDescription} onChange={(e) => setNewProductDescription(e.target.value)} />
         </Field>
-        <Field label="Source URL" hint="Link to the exact Lazada/TikTok Shop listing.">
-          <Input
-            type="url"
-            icon="link"
-            placeholder="https://…"
-            value={newProductSourceUrl}
-            onChange={(e) => setNewProductSourceUrl(e.target.value)}
-          />
-        </Field>
-        <Field label="Price" required hint="MMK">
+        <Field label="Price" required>
           <Input
             type="number"
             inputMode="decimal"
@@ -773,6 +764,15 @@ export function NewOrderWizard({
             placeholder="15000"
             value={newProductPrice}
             onChange={(e) => setNewProductPrice(e.target.value)}
+          />
+        </Field>
+        <Field label="Source URL" hint="Link to the exact Lazada/TikTok Shop listing.">
+          <Input
+            type="url"
+            icon="link"
+            placeholder="https://…"
+            value={newProductSourceUrl}
+            onChange={(e) => setNewProductSourceUrl(e.target.value)}
           />
         </Field>
 

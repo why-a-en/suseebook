@@ -25,14 +25,14 @@ export default function NewProductPage() {
           <Field label="Description" required>
             <Textarea name="description" rows={3} placeholder="Colour, fabric, fit — anything the customer should know" />
           </Field>
+          <Field label="Price" required>
+            <Input name="price" type="number" inputMode="decimal" step="0.01" min="0" icon="coins" suffix="MMK" placeholder="15000" />
+          </Field>
           <Field label="Images">
             <ImageUploadField />
           </Field>
           <Field label="Source URL" hint="Link to the exact Lazada/TikTok Shop listing.">
             <Input name="sourceUrl" type="url" icon="link" placeholder="https://…" />
-          </Field>
-          <Field label="Price" required hint="MMK">
-            <Input name="price" type="number" inputMode="decimal" step="0.01" min="0" icon="coins" suffix="MMK" placeholder="15000" />
           </Field>
 
           <div className="grid gap-4 rounded-md border border-line-hairline p-3">

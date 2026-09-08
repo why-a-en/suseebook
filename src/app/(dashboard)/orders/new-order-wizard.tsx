@@ -87,6 +87,50 @@ function clipQuery(q: string): string {
   return q.length > 24 ? `${q.slice(0, 24).trimEnd()}…` : q;
 }
 
+/** One line of the order — the same shape in the panel and on Review.
+ *  Name truncates; the ×qty stays put beside it; the extended price (or
+ *  nothing, when the order carries no prices at all) sits at the right;
+ *  the options run comma-separated underneath. */
+function OrderLine({
+  name,
+  options,
+  quantity,
+  amount,
+  muted = false,
+}: {
+  name: string;
+  options: string[];
+  quantity: number;
+  amount: string | null;
+  muted?: boolean;
+}) {
+  return (
+    <>
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="flex min-w-0 items-baseline gap-2">
+          <span className={cn("min-w-0 truncate font-ui text-body-strong", muted ? "text-text-muted" : "text-text-strong")}>
+            {name}
+          </span>
+          <span className="shrink-0 font-ui text-small text-text-faint [font-variant-numeric:tabular-nums]">×{quantity}</span>
+        </span>
+        {amount != null ? (
+          <span
+            className={cn(
+              "shrink-0 font-ui text-small-strong [font-variant-numeric:tabular-nums]",
+              muted ? "text-text-faint" : "text-text-strong",
+            )}
+          >
+            {amount}
+          </span>
+        ) : null}
+      </div>
+      {options.length ? (
+        <div className="mt-0.5 truncate font-ui text-small text-text-muted">{options.join(", ")}</div>
+      ) : null}
+    </>
+  );
+}
+
 /** How many products the picker lists before you type.
  *
  *  Products, unlike customers, arrive complete — the route fetches every
@@ -857,23 +901,25 @@ export function NewOrderWizard({
     ) : (
       <div className="grid gap-3">
         {totalItemCount ? (
-          // The order so far, as the subtotal line of a docket: mono
-          // micro-caps count on the left, tabular figure on the right, the
-          // Foot's own top hairline as its rule. Tap to open the full list.
+          // A plain tappable row — surface, label, summary, chevron — so it
+          // reads as "open the order", not as a caption. Opens the panel.
           <button
             type="button"
             onClick={() => setOrderPanelOpen(true)}
-            aria-label="Show the order so far"
-            className="-mx-2 flex items-baseline justify-between gap-3 rounded-sm px-2 py-1 text-left transition-colors duration-fast ease-standard active:bg-surface-hover"
+            className="flex w-full items-center justify-between gap-3 rounded-md border border-line-hairline bg-surface-raised px-4 py-3 text-left transition-transform duration-fast ease-standard active:scale-[0.985]"
           >
-            <span className="font-mono text-label tracking-label uppercase text-text-faint">
-              Order · {totalItemCount} line{totalItemCount === 1 ? "" : "s"}
-            </span>
-            {showAmounts ? (
-              <span className="font-ui text-small-strong text-text-strong [font-variant-numeric:tabular-nums]">
-                {totalText}
+            <span className="font-ui text-body-strong text-text-strong">Order so far</span>
+            <span className="flex items-center gap-3">
+              <span className="font-ui text-small text-text-muted">
+                {totalItemCount} item{totalItemCount === 1 ? "" : "s"}
               </span>
-            ) : null}
+              {showAmounts ? (
+                <span className="font-ui text-small-strong text-text-strong [font-variant-numeric:tabular-nums]">
+                  {totalText}
+                </span>
+              ) : null}
+              <Icon name="chevron-right" size={16} className="text-text-faint" />
+            </span>
           </button>
         ) : null}
         <div className="flex gap-2">
@@ -902,7 +948,7 @@ export function NewOrderWizard({
         </div>
 
         <div className="min-w-0">
-          <SectionHeader right={`${totalItemCount} line${totalItemCount === 1 ? "" : "s"}`}>Order</SectionHeader>
+          <SectionHeader right={`${totalItemCount} item${totalItemCount === 1 ? "" : "s"}`}>Order</SectionHeader>
           {[
             ...existingItems.map((line, i) => ({
               key: `existing-${i}`,
@@ -920,15 +966,7 @@ export function NewOrderWizard({
             })),
           ].map((line) => (
             <div key={line.key} className="border-b border-line-hairline px-5 py-3 last:border-b-0">
-              <div className="flex items-baseline justify-between gap-3">
-                <span className="min-w-0 truncate font-ui text-body-strong text-text-strong">{line.name}</span>
-                {line.amount != null ? (
-                  <span className="shrink-0 font-ui text-small-strong text-text-strong [font-variant-numeric:tabular-nums]">{line.amount}</span>
-                ) : null}
-              </div>
-              <div className="mt-0.5 font-ui text-small text-text-muted">
-                {[...line.selection, `×${line.quantity}`].join("  ·  ")}
-              </div>
+              <OrderLine name={line.name} options={line.selection} quantity={line.quantity} amount={line.amount} />
             </div>
           ))}
           <div className="flex items-baseline justify-between px-5 pt-3">
@@ -1021,17 +1059,13 @@ export function NewOrderWizard({
                 picture, greyed, no editing (that needs a server round-trip). */}
             {existingItems.map((line, i) => (
               <div key={`existing-${i}`} className="border-b border-line-hairline py-3 last:border-b-0">
-                <div className="flex items-baseline justify-between gap-3">
-                  <span className="min-w-0 truncate font-ui text-body-strong text-text-muted">{line.productName}</span>
-                  {showAmounts ? (
-                    <span className="shrink-0 font-ui text-small-strong text-text-faint [font-variant-numeric:tabular-nums]">
-                      {lineAmount(line.price, line.quantity)}
-                    </span>
-                  ) : null}
-                </div>
-                <div className="mt-0.5 font-ui text-small text-text-faint">
-                  {[...line.selection, `×${line.quantity}`].join("  ·  ")}
-                </div>
+                <OrderLine
+                  name={line.productName}
+                  options={line.selection}
+                  quantity={line.quantity}
+                  amount={showAmounts ? lineAmount(line.price, line.quantity) : null}
+                  muted
+                />
               </div>
             ))}
 
@@ -1044,19 +1078,14 @@ export function NewOrderWizard({
                     type="button"
                     onClick={() => setEditingLine(editing ? null : line.key)}
                     aria-expanded={editing}
-                    className="flex w-full flex-col gap-0.5 rounded-sm py-3 text-left transition-colors duration-fast ease-standard active:bg-surface-hover"
+                    className="block w-full rounded-sm py-3 text-left transition-colors duration-fast ease-standard active:bg-surface-hover"
                   >
-                    <span className="flex items-baseline justify-between gap-3">
-                      <span className="min-w-0 truncate font-ui text-body-strong text-text-strong">{line.productName}</span>
-                      {showAmounts ? (
-                        <span className="shrink-0 font-ui text-small-strong text-text-strong [font-variant-numeric:tabular-nums]">
-                          {lineAmount(unitPrice, line.quantity)}
-                        </span>
-                      ) : null}
-                    </span>
-                    <span className="font-ui text-small text-text-muted">
-                      {[...line.selection, `×${line.quantity}`].join("  ·  ")}
-                    </span>
+                    <OrderLine
+                      name={line.productName}
+                      options={line.selection}
+                      quantity={line.quantity}
+                      amount={showAmounts ? lineAmount(unitPrice, line.quantity) : null}
+                    />
                   </button>
                   {editing ? (
                     <div className="mb-3 flex items-center justify-between gap-3 rounded-sm bg-surface-sunken px-3 py-2.5">

@@ -865,7 +865,7 @@ export function NewOrderWizard({
                     <Field label="Quantity" group>
                       <QtyDial value={qty} onChange={setQty} min={1} />
                     </Field>
-                    <Button full icon="shopping-cart" disabled={!allSelected} onClick={commitItem} className="rounded-full shadow-raised">
+                    <Button full icon="notebook-pen" disabled={!allSelected} onClick={commitItem} className="rounded-full shadow-raised">
                       Add item
                     </Button>
                   </div>
@@ -909,7 +909,7 @@ export function NewOrderWizard({
             className="flex w-full items-center justify-between gap-3 rounded-md border border-line-hairline bg-surface-raised px-4 py-3 text-left transition-transform duration-fast ease-standard active:scale-[0.985]"
           >
             <span className="flex min-w-0 items-center gap-2.5">
-              <Icon name="list" size={16} className="shrink-0 text-text-muted" />
+              <Icon name="clipboard-list" size={16} className="shrink-0 text-text-muted" />
               <span className="truncate font-ui text-body-strong text-text-strong">
                 {totalItemCount === 1 ? "Order item" : "Order items"}
               </span>

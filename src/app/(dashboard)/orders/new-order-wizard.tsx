@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Screen, ScrollBody, Foot, Toolbar } from "@/components/ui/screen";
 import { TopBar } from "@/components/ui/top-bar";
@@ -87,22 +87,26 @@ function clipQuery(q: string): string {
   return q.length > 24 ? `${q.slice(0, 24).trimEnd()}…` : q;
 }
 
-/** One line of the order — the same shape in the panel and on Review.
- *  Name truncates; the ×qty stays put beside it; the extended price (or
- *  nothing, when the order carries no prices at all) sits at the right;
- *  the options run comma-separated underneath. */
+/** One line of the order — the same shape in the panel and on Review. Name
+ *  truncates; the extended price (or nothing, when the order carries no
+ *  prices) sits at the right of the first row; the options run
+ *  comma-separated underneath. Pass `control` (a QtyDial) for the editable
+ *  panel — it takes the second row's right side and the quantity shows
+ *  there; without it, a plain "×n" sits beside the name. */
 function OrderLine({
   name,
   options,
   quantity,
   amount,
   muted = false,
+  control,
 }: {
   name: string;
   options: string[];
   quantity: number;
   amount: string | null;
   muted?: boolean;
+  control?: ReactNode;
 }) {
   return (
     <>
@@ -111,7 +115,9 @@ function OrderLine({
           <span className={cn("min-w-0 truncate font-ui text-body-strong", muted ? "text-text-muted" : "text-text-strong")}>
             {name}
           </span>
-          <span className="shrink-0 font-ui text-small text-text-faint [font-variant-numeric:tabular-nums]">×{quantity}</span>
+          {control == null ? (
+            <span className="shrink-0 font-ui text-small text-text-faint [font-variant-numeric:tabular-nums]">×{quantity}</span>
+          ) : null}
         </span>
         {amount != null ? (
           <span
@@ -124,8 +130,11 @@ function OrderLine({
           </span>
         ) : null}
       </div>
-      {options.length ? (
-        <div className="mt-0.5 truncate font-ui text-small text-text-muted">{options.join(", ")}</div>
+      {options.length || control ? (
+        <div className="mt-1 flex items-center justify-between gap-3">
+          <span className="min-w-0 truncate font-ui text-small text-text-muted">{options.join(", ")}</span>
+          {control ?? null}
+        </div>
       ) : null}
     </>
   );
@@ -284,9 +293,8 @@ export function NewOrderWizard({
   const [qty, setQty] = useState(1);
   // The order so far lives in a panel behind the running-total line in the
   // footer, so the catalog keeps the whole screen no matter how long the
-  // order gets. `editingLine` is the line key whose stepper is open.
+  // order gets.
   const [orderPanelOpen, setOrderPanelOpen] = useState(false);
-  const [editingLine, setEditingLine] = useState<string | null>(null);
   // Where a blocked navigation was trying to go — non-null means the
   // "leave without saving?" dialog is open. "" stands for "just close the
   // dialog" cases that shouldn't be reachable.
@@ -372,9 +380,10 @@ export function NewOrderWizard({
     if (price == null) hasUnpricedItem = true;
     else priceTotal += Number(price) * line.quantity;
   }
-  // Money is common but not guaranteed at order time (Price is optional on a
-  // product). With nothing priced there's no figure worth showing — the
-  // docket drops the amount column and just carries line counts.
+  // New products all carry a price now, but the catalog still holds
+  // older ones that don't, and a resumed draft can too. With nothing on
+  // the order priced there's no figure worth showing — the docket drops
+  // the amount column and just carries line counts.
   const showAmounts = priceTotal > 0;
   const totalText = `${priceTotal.toLocaleString()} MMK${hasUnpricedItem ? "+" : ""}`;
 
@@ -502,7 +511,6 @@ export function NewOrderWizard({
   function removeOrderLine(key: string) {
     const next = cart.filter((line) => line.key !== key);
     setCart(next);
-    setEditingLine(null);
     // Nothing left to show — a resumed draft's own items keep it relevant.
     if (next.length === 0 && existingItems.length === 0) setOrderPanelOpen(false);
   }
@@ -754,7 +762,7 @@ export function NewOrderWizard({
             onChange={(e) => setNewProductSourceUrl(e.target.value)}
           />
         </Field>
-        <Field label="Price" hint="Optional, MMK">
+        <Field label="Price" required hint="MMK">
           <Input
             type="number"
             inputMode="decimal"
@@ -891,7 +899,7 @@ export function NewOrderWizard({
         <Button
           full
           icon="plus"
-          disabled={!newProductName || !newProductDescription || isPending}
+          disabled={!newProductName.trim() || !newProductDescription.trim() || !newProductPrice.trim() || isPending}
           onClick={handleCreateProduct}
           className="flex-1 rounded-full shadow-raised"
         >
@@ -1048,13 +1056,7 @@ export function NewOrderWizard({
         </AlertDialogContent>
       </AlertDialog>
 
-      <Sheet
-        open={orderPanelOpen}
-        onOpenChange={(open) => {
-          setOrderPanelOpen(open);
-          if (!open) setEditingLine(null);
-        }}
-      >
+      <Sheet open={orderPanelOpen} onOpenChange={setOrderPanelOpen}>
         <SheetContent>
           <SheetHeader title="Order" />
           <SheetBody className="pt-1">
@@ -1076,31 +1078,24 @@ export function NewOrderWizard({
             ))}
 
             {cart.map((line) => {
-              const editing = editingLine === line.key;
               const unitPrice = allProducts.find((p) => p.id === line.productId)?.price ?? null;
               return (
-                <div key={line.key} className="border-b border-line-hairline last:border-b-0">
-                  <button
-                    type="button"
-                    onClick={() => setEditingLine(editing ? null : line.key)}
-                    aria-expanded={editing}
-                    className="block w-full rounded-sm py-3 text-left transition-colors duration-fast ease-standard active:bg-surface-hover"
-                  >
-                    <OrderLine
-                      name={line.productName}
-                      options={line.selection}
-                      quantity={line.quantity}
-                      amount={showAmounts ? lineAmount(unitPrice, line.quantity) : null}
-                    />
-                  </button>
-                  {editing ? (
-                    <div className="mb-3 flex items-center justify-between gap-3 rounded-sm bg-surface-sunken px-3 py-2.5">
-                      <QtyDial value={line.quantity} onChange={(n) => setOrderLineQty(line.key, n)} min={1} />
-                      <Button variant="danger" size="sm" icon="x" onClick={() => removeOrderLine(line.key)}>
-                        Remove
-                      </Button>
-                    </div>
-                  ) : null}
+                <div key={line.key} className="border-b border-line-hairline py-3 last:border-b-0">
+                  <OrderLine
+                    name={line.productName}
+                    options={line.selection}
+                    quantity={line.quantity}
+                    amount={showAmounts ? lineAmount(unitPrice, line.quantity) : null}
+                    control={
+                      // Decrementing off 1 removes the line — no separate
+                      // delete affordance.
+                      <QtyDial
+                        value={line.quantity}
+                        min={0}
+                        onChange={(n) => (n < 1 ? removeOrderLine(line.key) : setOrderLineQty(line.key, n))}
+                      />
+                    }
+                  />
                 </div>
               );
             })}

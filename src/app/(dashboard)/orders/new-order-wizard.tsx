@@ -1056,8 +1056,11 @@ export function NewOrderWizard({
         }}
       >
         <SheetContent>
-          <SheetHeader title="Order" eyebrow={customer ? `For ${customer.name}` : undefined} />
+          <SheetHeader title="Order" />
           <SheetBody className="pt-1">
+            {customer ? (
+              <p className="pb-2 font-ui text-small text-text-muted">{customer.name}</p>
+            ) : null}
             {/* Lines already saved on the draft — shown for the whole
                 picture, greyed, no editing (that needs a server round-trip). */}
             {existingItems.map((line, i) => (

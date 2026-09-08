@@ -95,7 +95,7 @@ export function TagInput({
     }
   }
 
-  const shell = (
+  return (
     <div
       className={cn(
         // Same shell as Input — border, sunken fill, focus-on-wrapper, the
@@ -103,8 +103,7 @@ export function TagInput({
         // is indistinguishable from an empty <Input>. It only grows, and
         // wraps, once chips are in it.
         fieldShellWrapper,
-        "h-auto min-h-(--control-h-md) flex-wrap content-center gap-1.5 rounded-sm py-1.5",
-        icon ? "pr-3 pl-9" : "px-3",
+        "h-auto min-h-(--control-h-md) flex-wrap content-center gap-1.5 rounded-sm px-3 py-1.5",
         disabled && "opacity-55",
         className,
       )}
@@ -117,6 +116,15 @@ export function TagInput({
         }
       }}
     >
+      {icon ? (
+        // In-flow, not absolutely pinned: `self-center` centres it on the
+        // first flex line, so it's vertically centred whether the field is
+        // one row (matching Input) or several (staying by the first chips
+        // rather than floating to the middle of the box).
+        <span aria-hidden="true" className="pointer-events-none shrink-0 self-center pr-0.5 text-text-faint">
+          <Icon name={icon} size={16} />
+        </span>
+      ) : null}
       {tags.map((tag, i) => (
         <button
           key={`${tag}-${i}`}
@@ -151,20 +159,6 @@ export function TagInput({
         className={cn(fieldShellInner, "h-7 min-w-[8ch] text-text-strong")}
       />
       {name ? <input type="hidden" name={name} value={tags.join(",")} /> : null}
-    </div>
-  );
-
-  if (!icon) return shell;
-
-  // Icon pinned to the first row, not laid out — the box wraps and grows,
-  // and a glyph flex-centred in a three-row box floats beside nothing. Same
-  // treatment, and the same 13px offset, as Textarea's leading icon.
-  return (
-    <div className="relative grid">
-      <span aria-hidden="true" className="pointer-events-none absolute top-[13px] left-3 text-text-faint">
-        <Icon name={icon} size={16} />
-      </span>
-      {shell}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-// Who runs SuSeeBook. An allowlist of `users.id`s in the environment — the
+// Who runs SuSeeOS. An allowlist of `users.id`s in the environment — the
 // single source of truth for platform-operator status, so there is no
 // in-app path to becoming one and a database compromise can't grant it.
 //

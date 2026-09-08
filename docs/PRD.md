@@ -1,4 +1,4 @@
-# PRD: SuSeeBook — Order & Product Coordination Platform
+# PRD: SuSeeOS — Order & Product Coordination Platform
 
 **Status:** Draft v2
 **Owner:** Yan Min Thwin

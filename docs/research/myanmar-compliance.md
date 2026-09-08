@@ -94,7 +94,7 @@ interest-bearing accounts, maintenance of blocked tangible property, and exempt
 transactions. There is no section prohibiting trade with, or provision of
 services to, Burma as a country.
 
-**What this means for SuSeeBook:** providing a SaaS to a Myanmar-registered
+**What this means for SuSeeOS:** providing a SaaS to a Myanmar-registered
 business is not a prohibited transaction under 31 CFR 525 unless that business,
 its owners, or a counterparty is on the SDN List (or is 50%-or-more owned by
 blocked persons — see § 525.406). The compliance obligation is **screening**,
@@ -226,7 +226,7 @@ and § 3(b) reaches Myanmar citizens residing abroad.
 **Registration.** § 24 requires registration with the Department **only for a
 digital platform service provider with 100,000 or more users within the
 state**, which must also be a company registered under the Myanmar Companies
-Law. SuSeeBook is orders of magnitude below that threshold, so the registration
+Law. SuSeeOS is orders of magnitude below that threshold, so the registration
 duty does not currently attach. The penalty for crossing it unregistered is
 severe — § 64 sets a fine of **not less than MMK 100,000,000** plus
 confiscation of evidence as state property — so the threshold is worth tracking
@@ -316,7 +316,7 @@ required a court order for detention beyond 24 hours. The safeguards that
 constrained state access to persons and premises are, by the government's own
 publication, currently switched off.
 
-**Practical consequence for SuSeeBook:** there is no Myanmar law imposing a
+**Practical consequence for SuSeeOS:** there is no Myanmar law imposing a
 GDPR-style obligation (lawful basis, DSARs, breach notification, DPO, transfer
 restrictions) that this app is failing to meet. The obligations that do attach
 are the retention floor and the disclosure duty, both of which point the same
@@ -333,7 +333,7 @@ Two separate regimes, and the second one is the one that actually applies today.
    Registration Order**, issued 21 July 2023 under section 4(c) of the
    Essential Supplies and Services Law
    ([English text, commerce.gov.mm](https://commerce.gov.mm/sites/default/files/documents/2024/05/51-2023%28Online%20Sale%29%20English%20version.pdf)).
-   This one has a low threshold and directly describes what SuSeeBook's
+   This one has a low threshold and directly describes what SuSeeOS's
    Organizations do. Clause 3: "Anyone who desires to operate online sales
    business shall complete the application form specified by the Department and
    apply for a Registration Certificate to the Department through online
@@ -355,7 +355,7 @@ Two separate regimes, and the second one is the one that actually applies today.
    [7,169 registrations approved between 2 October 2023 and 8 August 2024](https://www.moi.gov.mm/moi:eng/news/15124).
 
    **This is an obligation of the Organization (the operator's client), not of
-   SuSeeBook as a platform** — but it is worth knowing, because it is the
+   SuSeeOS as a platform** — but it is worth knowing, because it is the
    compliance step a Myanmar Organization onboarding onto this product is most
    likely to ask about, and because clause 4(b)'s "official website in its own
    name" requirement interacts with how tenants are exposed.
@@ -380,7 +380,7 @@ regulation, and we could not confirm that none exists (see
 So: **Neon in Singapore, Vercel `sin1`, and Cloudflare R2 are not invalidated
 by anything we could find.** The § 30(b) hook is a watch item, not a present
 obligation — and it applies to *digital platform service providers*, a
-category SuSeeBook arguably falls into by definition but is far below the
+category SuSeeOS arguably falls into by definition but is far below the
 registration threshold for.
 
 ---
@@ -536,7 +536,7 @@ solicitor–client or attorney–client relationship.
 Points that specifically warrant confirmation from **Myanmar-qualified
 counsel** before being relied on:
 
-1. **Whether SuSeeBook is a "digital platform service provider"** under
+1. **Whether SuSeeOS is a "digital platform service provider"** under
    Cybersecurity Law § 4(l), and whether §§ 30–35 (storage, retention,
    disclosure) apply below the § 24 registration threshold of 100,000 in-state
    users, or only to registered providers.

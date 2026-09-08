@@ -1,4 +1,4 @@
-# SuSeeBook
+# SuSeeOS
 
 An internal tool for a Myanmar-based cross-border resale business: Support
 Agents log customer requests against a Product catalog; Suppliers buy the

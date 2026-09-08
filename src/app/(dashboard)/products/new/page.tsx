@@ -23,7 +23,7 @@ export default function NewProductPage() {
             <Input name="name" icon="package" autoComplete="off" placeholder="Denim jacket" />
           </Field>
           <Field label="Description" required>
-            <Textarea name="description" icon="align-left" rows={3} placeholder="Colour, fabric, fit — anything the customer should know" />
+            <Textarea name="description" rows={3} placeholder="Colour, fabric, fit — anything the customer should know" />
           </Field>
           <Field label="Images">
             <ImageUploadField />

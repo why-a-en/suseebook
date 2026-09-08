@@ -1,6 +1,5 @@
 import type { CSSProperties } from "react";
 import {
-  AlignLeft,
   AtSign,
   ArrowLeft,
   Box,
@@ -56,7 +55,6 @@ import {
  * icon.
  */
 const REGISTRY = {
-  "align-left": AlignLeft,
   "arrow-left": ArrowLeft,
   "at-sign": AtSign,
   box: Box,

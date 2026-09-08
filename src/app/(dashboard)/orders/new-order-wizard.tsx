@@ -588,7 +588,7 @@ export function NewOrderWizard({
           <Input icon="package" autoComplete="off" placeholder="Denim jacket" value={newProductName} onChange={(e) => setNewProductName(e.target.value)} />
         </Field>
         <Field label="Description" required>
-          <Textarea icon="align-left" rows={3} placeholder="Colour, fabric, fit — anything the customer should know" value={newProductDescription} onChange={(e) => setNewProductDescription(e.target.value)} />
+          <Textarea rows={3} placeholder="Colour, fabric, fit — anything the customer should know" value={newProductDescription} onChange={(e) => setNewProductDescription(e.target.value)} />
         </Field>
         <Field label="Source URL" hint="Link to the exact Lazada/TikTok Shop listing.">
           <Input
@@ -808,7 +808,7 @@ export function NewOrderWizard({
             to add "call before delivery". saveOrderAction stores a
             whitespace-only value as null, so leaving it empty costs nothing. */}
         <Field className="px-5" label="Notes" hint="Optional — anything the Supplier should know">
-          <Textarea icon="align-left" rows={3} placeholder="Anything the Supplier should know" value={notes} onChange={(e) => setNotes(e.target.value)} />
+          <Textarea rows={3} placeholder="Anything the Supplier should know" value={notes} onChange={(e) => setNotes(e.target.value)} />
         </Field>
       </div>
     );

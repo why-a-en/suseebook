@@ -201,6 +201,11 @@ export function NewOrderWizard({
   const [newProductDescription, setNewProductDescription] = useState("");
   const [newProductPrice, setNewProductPrice] = useState("");
   const [newProductSourceUrl, setNewProductSourceUrl] = useState("");
+  // One optional Modifier, same as /products/new — enough to capture "the
+  // red one in size M" while it's being asked for. A second Modifier is
+  // catalog work for the product's own page.
+  const [newProductModifierName, setNewProductModifierName] = useState("");
+  const [newProductModifierOptions, setNewProductModifierOptions] = useState("");
   // Products created inline during this wizard run. The `products` prop is a
   // server snapshot taken when the route rendered; a product created here
   // has to join the list the Items step is filtering over without a
@@ -308,10 +313,10 @@ export function NewOrderWizard({
   }
 
   /** Mirrors handleCreateCustomer: create, drop the row into local state,
-   *  and land the agent where they can immediately use it. Here that means
-   *  opening the new product's picker straight away — it has no modifiers,
-   *  so "Add item" is live on the spot and the only remaining decision is
-   *  quantity. */
+   *  and land the agent where they can immediately use it — the new
+   *  product's picker opens straight away. If a Modifier was entered the
+   *  picker opens on its options (and "Add item" waits for a choice); if
+   *  not, quantity is the only remaining decision and "Add item" is live. */
   function handleCreateProduct() {
     setError(null);
     startTransition(async () => {
@@ -321,14 +326,18 @@ export function NewOrderWizard({
           description: newProductDescription,
           price: newProductPrice,
           sourceUrl: newProductSourceUrl,
+          modifierName: newProductModifierName,
+          modifierOptions: newProductModifierOptions,
         });
-        const product: WizardProduct = { ...created, modifierGroups: [] };
+        const product: WizardProduct = created;
         setExtraProducts((prev) => [product, ...prev]);
         setAddingProduct(false);
         setNewProductName("");
         setNewProductDescription("");
         setNewProductPrice("");
         setNewProductSourceUrl("");
+        setNewProductModifierName("");
+        setNewProductModifierOptions("");
         // Narrow the list to the new product rather than clearing the
         // query. Cleared, it lands wherever the refreshed catalog sorts it —
         // for anything past the third product that is below the fold, with
@@ -602,8 +611,34 @@ export function NewOrderWizard({
             onChange={(e) => setNewProductPrice(e.target.value)}
           />
         </Field>
+
+        {/* One optional Modifier, same layout as /products/new. Filled in,
+            it's created and attached with the product, and the picker that
+            opens next lands straight on its options. */}
+        <div className="grid gap-4 rounded-md border border-line-hairline p-3">
+          <span className="font-mono text-label tracking-label uppercase text-text-faint">Modifier (optional)</span>
+          <Field label="Name" hint="What varies — size, colour, material">
+            <Input
+              icon="tag"
+              autoComplete="off"
+              placeholder="Colour"
+              value={newProductModifierName}
+              onChange={(e) => setNewProductModifierName(e.target.value)}
+            />
+          </Field>
+          <Field label="Options" hint="Comma-separated">
+            <Input
+              icon="list"
+              autoComplete="off"
+              placeholder="Black, White, Red"
+              value={newProductModifierOptions}
+              onChange={(e) => setNewProductModifierOptions(e.target.value)}
+            />
+          </Field>
+        </div>
+
         <p className="font-ui text-small text-text-faint">
-          Photos and modifiers can be added on the product&rsquo;s own page later — neither is needed to put it on this order.
+          Photos, and any further modifiers, can be added on the product&rsquo;s own page later — neither is needed to put it on this order.
         </p>
       </div>
     ) : (

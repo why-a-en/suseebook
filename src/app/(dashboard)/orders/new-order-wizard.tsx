@@ -378,21 +378,33 @@ export function NewOrderWizard({
 
   function commitItem() {
     if (!picking) return;
-    const modifierOptionIds = picking.modifierGroups.map((g) => {
+    const product = picking;
+    const modifierOptionIds = product.modifierGroups.map((g) => {
       const value = selections[g.id];
       return g.options.find((o) => o.value === value)!.id;
     });
-    setCart((prev) => [
-      ...prev,
-      {
-        key: `${picking.id}-${Date.now()}`,
-        productId: picking.id,
-        productName: picking.name,
-        selection: picking.modifierGroups.map((g) => selections[g.id]).filter(Boolean),
-        modifierOptionIds,
-        quantity: qty,
-      },
-    ]);
+    // Same product, same options = the same line — a second "Add item" bumps
+    // its quantity rather than stacking a duplicate row. Options compared as
+    // a set so order can't matter.
+    const lineKey = (productId: string, ids: string[]) => `${productId}::${[...ids].sort().join(",")}`;
+    const thisKey = lineKey(product.id, modifierOptionIds);
+    setCart((prev) => {
+      const existing = prev.findIndex((line) => lineKey(line.productId, line.modifierOptionIds) === thisKey);
+      if (existing !== -1) {
+        return prev.map((line, i) => (i === existing ? { ...line, quantity: line.quantity + qty } : line));
+      }
+      return [
+        ...prev,
+        {
+          key: `${product.id}-${Date.now()}`,
+          productId: product.id,
+          productName: product.name,
+          selection: product.modifierGroups.map((g) => selections[g.id]).filter(Boolean),
+          modifierOptionIds,
+          quantity: qty,
+        },
+      ];
+    });
     setPicking(null);
     setSelections({});
     setQty(1);

@@ -648,29 +648,21 @@ export function NewOrderWizard({
       </div>
     ) : (
       <div className="grid gap-3">
-        {/* The order so far — its items, then its notes. Notes belongs with
-            these and not at the foot of the step: it annotates the order,
-            and sitting last it ended up directly under whatever the product
-            search produced, so against an empty result it read as a note
-            about the product that couldn't be found. It also only appears
-            once something is on the order, since there's nothing to annotate
-            before that and a lone notes box above an untouched catalog is
-            the first thing you'd have to scroll past. */}
+        {/* The order so far — just its items. The order-level Notes field
+            lives on Review: this step is already carrying the running list,
+            the search, and inline product creation, and a notes box wedged
+            between the list and the search read as a note about whatever the
+            search had just turned up. */}
         {totalItemCount ? (
-          <>
-            <div className="min-w-0">
-              <SectionHeader right={`${totalItemCount} items`}>On this order</SectionHeader>
-              {existingItems.map((line, i) => (
-                <OrderItemRow key={`existing-${i}`} product={line.productName} selection={line.selection} qty={line.quantity} status="Pending" />
-              ))}
-              {cart.map((line) => (
-                <OrderItemRow key={line.key} product={line.productName} selection={line.selection} qty={line.quantity} status="Pending" />
-              ))}
-            </div>
-            <Field className="px-5" label="Notes" hint="Optional — anything the Supplier should know">
-              <Textarea icon="align-left" rows={2} placeholder="Anything the Supplier should know" value={notes} onChange={(e) => setNotes(e.target.value)} />
-            </Field>
-          </>
+          <div className="min-w-0">
+            <SectionHeader right={`${totalItemCount} items`}>On this order</SectionHeader>
+            {existingItems.map((line, i) => (
+              <OrderItemRow key={`existing-${i}`} product={line.productName} selection={line.selection} qty={line.quantity} status="Pending" />
+            ))}
+            {cart.map((line) => (
+              <OrderItemRow key={line.key} product={line.productName} selection={line.selection} qty={line.quantity} status="Pending" />
+            ))}
+          </div>
         ) : null}
 
         {/* Search and "new product" are one row: the moment you find out a
@@ -811,19 +803,13 @@ export function NewOrderWizard({
           ) : null}
         </div>
 
-        {/* Read-only recap, not a control — `group` keeps the label a
-            labelled region instead of a `htmlFor` pointing at an id that no
-            element on this step carries. Absent entirely when there are no
-            notes: Review is a list of what's on the order, and a labelled
-            row saying "No notes added." is a line of chrome reporting the
-            absence of something optional. Trimmed, because saveOrderAction
-            stores whitespace-only notes as null — this would otherwise show
-            an empty row for something that won't be saved at all. */}
-        {notes.trim() ? (
-          <Field className="px-5" label="Notes" group>
-            <p className="font-ui text-body text-text-body">{notes}</p>
-          </Field>
-        ) : null}
+        {/* Notes is entered here, not on Items — it annotates the whole
+            order, and the last look before placing it is the natural moment
+            to add "call before delivery". saveOrderAction stores a
+            whitespace-only value as null, so leaving it empty costs nothing. */}
+        <Field className="px-5" label="Notes" hint="Optional — anything the Supplier should know">
+          <Textarea icon="align-left" rows={3} placeholder="Anything the Supplier should know" value={notes} onChange={(e) => setNotes(e.target.value)} />
+        </Field>
       </div>
     );
     footer = (

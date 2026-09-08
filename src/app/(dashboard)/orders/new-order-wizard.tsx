@@ -908,11 +908,11 @@ export function NewOrderWizard({
             onClick={() => setOrderPanelOpen(true)}
             className="flex w-full items-center justify-between gap-3 rounded-md border border-line-hairline bg-surface-raised px-4 py-3 text-left transition-transform duration-fast ease-standard active:scale-[0.985]"
           >
-            <span className="font-ui text-body-strong text-text-strong">The order</span>
+            <span className="font-ui text-body-strong text-text-strong">
+              {totalItemCount === 1 ? "Order item" : "Order items"}
+            </span>
             <span className="flex items-center gap-3">
-              <span className="font-ui text-small text-text-muted">
-                {totalItemCount} item{totalItemCount === 1 ? "" : "s"}
-              </span>
+              <span className="font-ui text-small text-text-muted [font-variant-numeric:tabular-nums]">{totalItemCount}</span>
               {showAmounts ? (
                 <span className="font-ui text-small-strong text-text-strong [font-variant-numeric:tabular-nums]">
                   {totalText}

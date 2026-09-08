@@ -90,8 +90,21 @@ const STEPS = [
  *  "Save as draft" legible as a concept: it's plainly a pause partway
  *  through a multi-step form, not a separate lesser kind of order. Stays put
  *  (doesn't add a fourth step) while configuring one product's modifiers —
- *  that's a sub-state of Items, not its own step. */
-function StepIndicator({ step }: { step: Step }) {
+ *  that's a sub-state of Items, not its own step.
+ *
+ *  It's also the primary way to move between steps: any pip whose step is
+ *  reachable (see `stepReachable`) is a button that jumps straight there,
+ *  carrying all wizard state with it. The current step and any step still
+ *  gated behind an unmet prerequisite are inert. */
+function StepIndicator({
+  step,
+  reachable,
+  onJump,
+}: {
+  step: Step;
+  reachable: (target: Step) => boolean;
+  onJump: (target: Step) => void;
+}) {
   const activeIndex = STEPS.findIndex((s) => s.key === step);
   return (
     <Toolbar className="pt-[18px] pb-3">
@@ -99,8 +112,9 @@ function StepIndicator({ step }: { step: Step }) {
         {STEPS.map((s, i) => {
           const done = i < activeIndex;
           const active = i === activeIndex;
-          return (
-            <div key={s.key} className={done || active ? "flex items-center" : "flex items-center"} style={{ flex: i < STEPS.length - 1 ? 1 : "0 0 auto" }}>
+          const canJump = !active && reachable(s.key);
+          const pip = (
+            <>
               <span
                 className={
                   "flex size-[22px] shrink-0 items-center justify-center rounded-full font-mono text-[11px] " +
@@ -109,7 +123,30 @@ function StepIndicator({ step }: { step: Step }) {
               >
                 {done ? <Icon name="check" size={12} /> : i + 1}
               </span>
-              <span className={"ml-1.5 whitespace-nowrap font-ui text-small-strong " + (active ? "text-text-strong" : "text-text-faint")}>{s.label}</span>
+              <span
+                className={
+                  "ml-1.5 whitespace-nowrap font-ui text-small-strong " +
+                  (active ? "text-text-strong" : canJump ? "text-text-body" : "text-text-faint")
+                }
+              >
+                {s.label}
+              </span>
+            </>
+          );
+          return (
+            <div key={s.key} className="flex items-center" style={{ flex: i < STEPS.length - 1 ? 1 : "0 0 auto" }}>
+              {canJump ? (
+                <button
+                  type="button"
+                  onClick={() => onJump(s.key)}
+                  aria-label={`Go to ${s.label}`}
+                  className="flex items-center rounded-full transition-transform duration-fast ease-standard active:scale-95"
+                >
+                  {pip}
+                </button>
+              ) : (
+                <span className="flex items-center">{pip}</span>
+              )}
               {i < STEPS.length - 1 ? <span className={"mx-2.5 h-px flex-1 " + (done ? "bg-accent" : "bg-line-hairline")} /> : null}
             </div>
           );
@@ -345,6 +382,28 @@ export function NewOrderWizard({
     setQty(1);
   }
 
+  // Free movement between steps, driven by the progress indicator. Only the
+  // two data-entry sub-steps are torn down; every field of wizard state —
+  // the chosen customer, the cart, the notes, a half-typed new customer or
+  // product — is left exactly as it was, so a jump is never a reset.
+  function jumpToStep(target: Step) {
+    setAddingCustomer(false);
+    setAddingProduct(false);
+    setPicking(null);
+    setStep(target);
+  }
+
+  // Which pips the indicator turns into buttons. A completed step is always
+  // revisitable; a step ahead unlocks only once its prerequisite exists —
+  // Items needs a customer, Review needs a customer and at least one line.
+  // A resumed draft keeps its customer fixed (same rule as the Items step's
+  // "Previous" button), so that pip stays inert.
+  function stepReachable(target: Step): boolean {
+    if (target === "customer") return !resume;
+    if (target === "items") return customer !== null;
+    return customer !== null && totalItemCount > 0;
+  }
+
   function handleSave(place: boolean) {
     if (!customer) return;
     if (place && totalItemCount === 0) return;
@@ -371,10 +430,9 @@ export function NewOrderWizard({
 
   let title = "New order";
   let eyebrow = "Customer";
-  // Default (Customer step, and Items below): back leaves the wizard route
-  // entirely, back to the Orders list — there's nothing "behind" Customer to
-  // step to within the wizard itself. Items also has its own inline "Change
-  // customer" link for stepping back a wizard step without leaving the route.
+  // Default (the Customer step's search view): there's nothing behind
+  // Customer inside the wizard, so back leaves the route for the Orders
+  // list. Every other step reassigns this to step within the wizard.
   let onBack: (() => void) | undefined = () => router.push("/orders");
   let body;
   let footer;
@@ -408,12 +466,30 @@ export function NewOrderWizard({
                 variant="solid"
                 onClick={() => {
                   setAddingCustomer(true);
-                  setNewCustomerName(customerQuery);
+                  // Seed the name from the search, but never over a name
+                  // already typed — you may be coming back to this form.
+                  setNewCustomerName((prev) => prev || customerQuery);
                 }}
               />
             }
           />
         </div>
+        {/* When you've stepped back to this screen the chosen customer is
+            still set — surface it, checked, so "my selection is gone" is
+            never a question. Pinned only when it isn't already one of the
+            rows below (a large table, or a narrowed search). */}
+        {customer && !visibleMatches.some((c) => c.id === customer.id) ? (
+          <div className="min-w-0">
+            <SectionHeader>Selected</SectionHeader>
+            <CustomerRow
+              name={customer.name}
+              phone={customer.phone}
+              address={customer.address}
+              onClick={() => setStep("items")}
+              right={<Icon name="check" size={16} color="var(--color-accent-text)" />}
+            />
+          </div>
+        ) : null}
         <div className={customerSearching ? "opacity-55 transition-opacity duration-fast ease-standard" : "transition-opacity duration-fast ease-standard"}>
           {visibleMatches.map((c) => (
             <CustomerRow
@@ -425,6 +501,7 @@ export function NewOrderWizard({
                 setCustomer(c);
                 setStep("items");
               }}
+              right={c.id === customer?.id ? <Icon name="check" size={16} color="var(--color-accent-text)" /> : undefined}
             />
           ))}
         </div>
@@ -447,18 +524,21 @@ export function NewOrderWizard({
         ) : null}
       </div>
     );
-    // Only the create sub-step has a footer. "+ New customer" used to live
-    // here as a full-width pinned button, because it had gone unreachable
-    // below a long customer list — but that list is capped at BROWSE_CAP
-    // now, and the button has moved to the top of the body beside the search
-    // it belongs to, which is above the fold rather than merely pinned. With
-    // it gone there is no second action on this step (picking a customer
-    // advances), so the footer goes too and the list gets the height back.
-    // Back is still a real, equally-weighted button in the sub-step, not the
-    // small inline text link it once was.
-    // In the create sub-step, the top-bar back arrow mirrors the footer's
-    // Back: it steps back to the customer search — the wizard's first step —
-    // not out of the wizard to the Orders list.
+    // "+ New customer" used to live here as a full-width pinned button,
+    // because it had gone unreachable below a long customer list — but that
+    // list is capped at BROWSE_CAP now, and the button has moved to the top
+    // of the body beside the search it belongs to. Back in the sub-step is
+    // still a real, equally-weighted button, not the small inline text link
+    // it once was.
+    //
+    // The footer carries "Continue to items" only once a customer is
+    // chosen — which, thanks to the pick-to-advance shortcut, means you got
+    // here by stepping back. It's the forward half of the pair the other
+    // steps already have, and its presence is the signal that the earlier
+    // choice survived the trip back.
+    //
+    // In the create sub-step the top-bar back arrow mirrors the footer's
+    // Back: it steps back to the customer search, not out of the wizard.
     if (addingCustomer) onBack = () => setAddingCustomer(false);
     footer = addingCustomer ? (
       <div className="flex gap-2">
@@ -475,10 +555,20 @@ export function NewOrderWizard({
           {isPending ? "Creating…" : "Create customer"}
         </Button>
       </div>
+    ) : customer ? (
+      <Button full iconAfter="chevron-right" onClick={() => setStep("items")} className="rounded-full shadow-raised">
+        Continue to items
+      </Button>
     ) : null;
   } else if (step === "items") {
     title = customer?.name ?? "Items";
     eyebrow = "Items";
+    // Top-bar back mirrors the footer: out of the product sub-step if it's
+    // open, otherwise one wizard step back to Customer (or out to the Orders
+    // list for a resumed draft, which has no Customer step to return to).
+    onBack = addingProduct
+      ? () => setAddingProduct(false)
+      : () => (resume ? router.push("/orders") : setStep("customer"));
     body = addingProduct ? (
       // Same shape as the Customer step's inline create: the step's body
       // becomes the form and its footer becomes Back / Create, rather than a
@@ -560,7 +650,7 @@ export function NewOrderWizard({
                 variant="solid"
                 onClick={() => {
                   setAddingProduct(true);
-                  setNewProductName(productQuery);
+                  setNewProductName((prev) => prev || productQuery);
                 }}
               />
             }
@@ -716,7 +806,7 @@ export function NewOrderWizard({
   return (
     <Screen>
       <TopBar title={title} eyebrow={eyebrow} onBack={onBack} />
-      <StepIndicator step={step} />
+      <StepIndicator step={step} reachable={stepReachable} onJump={jumpToStep} />
       <ScrollBody>
         {/* No gutter here — Screen's contract is that the body doesn't get
             one, because full-bleed rows carry their own px-5 and it is part

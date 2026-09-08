@@ -37,7 +37,7 @@ export async function createProductAction(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
   const sourceUrl = String(formData.get("sourceUrl") ?? "").trim() || null;
-  const price = String(formData.get("price") ?? "").trim() || null;
+  const price = String(formData.get("price") ?? "").trim();
   const imageUrls = formData.getAll("imageUrls").map(String).filter(Boolean);
   const modifierName = String(formData.get("modifierName") ?? "").trim();
   const modifierOptionValues = String(formData.get("modifierOptions") ?? "")
@@ -47,6 +47,9 @@ export async function createProductAction(formData: FormData) {
 
   if (!name || !description) {
     throw new Error("Name and description are required.");
+  }
+  if (!price || Number.isNaN(Number(price)) || Number(price) < 0) {
+    throw new Error("Enter a valid price.");
   }
 
   const productId = await withCurrentOrganization(async ({ organizationId, userId, tx }) => {
@@ -131,13 +134,13 @@ export async function createProductInlineAction(input: {
 }): Promise<{
   id: string;
   name: string;
-  price: string | null;
+  price: string;
   sourceUrl: string | null;
   modifierGroups: { id: string; name: string; options: { id: string; value: string }[] }[];
 }> {
   const name = input.name.trim();
   const description = input.description.trim();
-  const price = input.price?.trim() || null;
+  const price = input.price?.trim() ?? "";
   const sourceUrl = input.sourceUrl?.trim() || null;
   const modifierName = input.modifierName?.trim() ?? "";
   const modifierOptionValues = (input.modifierOptions ?? [])
@@ -146,6 +149,7 @@ export async function createProductInlineAction(input: {
 
   if (!name) throw new Error("Name is required.");
   if (!description) throw new Error("Description is required.");
+  if (!price || Number.isNaN(Number(price)) || Number(price) < 0) throw new Error("Enter a valid price.");
 
   const product = await withCurrentOrganization(async ({ organizationId, userId, tx }) => {
     const [row] = await tx
@@ -183,7 +187,7 @@ export async function createProductInlineAction(input: {
       modifierGroups.push({ id: modifier.id, name: modifierName, options: insertedOptions });
     }
 
-    return { ...row, modifierGroups };
+    return { ...row, price: row.price ?? price, modifierGroups };
   });
 
   revalidatePath("/products");

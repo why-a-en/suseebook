@@ -31,7 +31,7 @@ export default function NewProductPage() {
           <Field label="Source URL" hint="Link to the exact Lazada/TikTok Shop listing.">
             <Input name="sourceUrl" type="url" icon="link" placeholder="https://…" />
           </Field>
-          <Field label="Price" hint="Optional, MMK">
+          <Field label="Price" required hint="MMK">
             <Input name="price" type="number" inputMode="decimal" step="0.01" min="0" icon="coins" suffix="MMK" placeholder="15000" />
           </Field>
 

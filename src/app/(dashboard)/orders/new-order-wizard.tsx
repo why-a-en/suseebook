@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Screen, ScrollBody, Foot, Toolbar } from "@/components/ui/screen";
 import { TopBar } from "@/components/ui/top-bar";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { TagInput } from "@/components/ui/tag-input";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchField } from "@/components/ui/search-field";
 import { OptionChips } from "@/components/ui/option-chips";
@@ -15,12 +16,24 @@ import { IconButton } from "@/components/ui/icon-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { CustomerRow } from "@/components/ui/customer-row";
 import { ProductRow } from "@/components/ui/product-row";
-import { OrderItemRow } from "@/components/ui/order-item-row";
 import { SectionHeader } from "@/components/ui/section-header";
+import { Sheet, SheetContent, SheetHeader, SheetBody, SheetFooter } from "@/components/ui/sheet";
 import { ErrorDialog } from "@/components/ui/error-dialog";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogBody,
+  AlertDialogFooter,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogCancel,
+} from "@/components/ui/alert-dialog";
 import { Icon } from "@/components/icon";
+import { armNavigationGuard, disarmNavigationGuard } from "@/lib/navigation-guard";
+import { cn } from "@/lib/utils";
 import { createProductInlineAction } from "@/app/(dashboard)/products/actions";
-import { createCustomerAction, saveOrderAction, searchCustomersAction } from "./actions";
+import { createCustomerAction, deleteDraftAction, saveOrderAction, searchCustomersAction } from "./actions";
 
 export interface WizardCustomer {
   id: string;
@@ -44,18 +57,20 @@ export interface WizardProduct {
 }
 
 /** A saved-but-not-placed Order — resuming it reopens the wizard straight
- *  at the Items step with its customer and whatever was already added. */
+ *  at the Items step with its customer and its still-pending items, all
+ *  editable. Saving reconciles them (see saveOrder). */
 export interface DraftResume {
   orderId: string;
   customer: WizardCustomer;
   notes: string;
-  existingItems: { productName: string; price: string | null; selection: string[]; quantity: number }[];
+  items: { productId: string; productName: string; price: string | null; selection: string[]; modifierOptionIds: string[]; quantity: number }[];
 }
 
 interface CartLine {
   key: string;
   productId: string;
   productName: string;
+  price: string | null;
   selection: string[];
   modifierOptionIds: string[];
   quantity: number;
@@ -66,6 +81,75 @@ type Step = "customer" | "items" | "review";
 function formatPrice(price: string | null): string | undefined {
   if (!price) return undefined;
   return `${Number(price).toLocaleString()} MMK`;
+}
+
+/** The typed query, echoed back in a "no match" line — capped so a long one
+ *  doesn't turn the empty state into a wall of text. */
+function clipQuery(q: string): string {
+  return q.length > 24 ? `${q.slice(0, 24).trimEnd()}…` : q;
+}
+
+/** Order-independent fingerprint of the cart — product + option set +
+ *  quantity per line. Used to tell whether a resumed draft has actually
+ *  been changed. */
+function cartSignature(lines: CartLine[]): string {
+  return lines
+    .map((l) => `${l.productId}:${[...l.modifierOptionIds].sort().join(",")}:${l.quantity}`)
+    .sort()
+    .join("|");
+}
+
+/** One line of the order — the same shape in the panel and on Review. Name
+ *  truncates; the extended price (or nothing, when the order carries no
+ *  prices) sits at the right of the first row; the options run
+ *  comma-separated underneath. Pass `control` (a QtyDial) for the editable
+ *  panel — it takes the second row's right side and the quantity shows
+ *  there; without it, a plain "×n" sits beside the name. */
+function OrderLine({
+  name,
+  options,
+  quantity,
+  amount,
+  muted = false,
+  control,
+}: {
+  name: string;
+  options: string[];
+  quantity: number;
+  amount: string | null;
+  muted?: boolean;
+  control?: ReactNode;
+}) {
+  return (
+    <>
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="flex min-w-0 items-baseline gap-2">
+          <span className={cn("min-w-0 truncate font-ui text-body-strong", muted ? "text-text-muted" : "text-text-strong")}>
+            {name}
+          </span>
+          {control == null ? (
+            <span className="shrink-0 font-ui text-small text-text-faint [font-variant-numeric:tabular-nums]">×{quantity}</span>
+          ) : null}
+        </span>
+        {amount != null ? (
+          <span
+            className={cn(
+              "shrink-0 font-ui text-small-strong [font-variant-numeric:tabular-nums]",
+              muted ? "text-text-faint" : "text-text-strong",
+            )}
+          >
+            {amount}
+          </span>
+        ) : null}
+      </div>
+      {options.length || control ? (
+        <div className="mt-1 flex items-center justify-between gap-3">
+          <span className="min-w-0 truncate font-ui text-small text-text-muted">{options.join(", ")}</span>
+          {control ?? null}
+        </div>
+      ) : null}
+    </>
+  );
 }
 
 /** How many products the picker lists before you type.
@@ -90,8 +174,21 @@ const STEPS = [
  *  "Save as draft" legible as a concept: it's plainly a pause partway
  *  through a multi-step form, not a separate lesser kind of order. Stays put
  *  (doesn't add a fourth step) while configuring one product's modifiers —
- *  that's a sub-state of Items, not its own step. */
-function StepIndicator({ step }: { step: Step }) {
+ *  that's a sub-state of Items, not its own step.
+ *
+ *  It's also the primary way to move between steps: any pip whose step is
+ *  reachable (see `stepReachable`) is a button that jumps straight there,
+ *  carrying all wizard state with it. The current step and any step still
+ *  gated behind an unmet prerequisite are inert. */
+function StepIndicator({
+  step,
+  reachable,
+  onJump,
+}: {
+  step: Step;
+  reachable: (target: Step) => boolean;
+  onJump: (target: Step) => void;
+}) {
   const activeIndex = STEPS.findIndex((s) => s.key === step);
   return (
     <Toolbar className="pt-[18px] pb-3">
@@ -99,8 +196,9 @@ function StepIndicator({ step }: { step: Step }) {
         {STEPS.map((s, i) => {
           const done = i < activeIndex;
           const active = i === activeIndex;
-          return (
-            <div key={s.key} className={done || active ? "flex items-center" : "flex items-center"} style={{ flex: i < STEPS.length - 1 ? 1 : "0 0 auto" }}>
+          const canJump = !active && reachable(s.key);
+          const pip = (
+            <>
               <span
                 className={
                   "flex size-[22px] shrink-0 items-center justify-center rounded-full font-mono text-[11px] " +
@@ -109,7 +207,30 @@ function StepIndicator({ step }: { step: Step }) {
               >
                 {done ? <Icon name="check" size={12} /> : i + 1}
               </span>
-              <span className={"ml-1.5 whitespace-nowrap font-ui text-small-strong " + (active ? "text-text-strong" : "text-text-faint")}>{s.label}</span>
+              <span
+                className={
+                  "ml-1.5 whitespace-nowrap font-ui text-small-strong " +
+                  (active ? "text-text-strong" : canJump ? "text-text-body" : "text-text-faint")
+                }
+              >
+                {s.label}
+              </span>
+            </>
+          );
+          return (
+            <div key={s.key} className="flex items-center" style={{ flex: i < STEPS.length - 1 ? 1 : "0 0 auto" }}>
+              {canJump ? (
+                <button
+                  type="button"
+                  onClick={() => onJump(s.key)}
+                  aria-label={`Go to ${s.label}`}
+                  className="flex items-center rounded-full transition-transform duration-fast ease-standard active:scale-95"
+                >
+                  {pip}
+                </button>
+              ) : (
+                <span className="flex items-center">{pip}</span>
+              )}
               {i < STEPS.length - 1 ? <span className={"mx-2.5 h-px flex-1 " + (done ? "bg-accent" : "bg-line-hairline")} /> : null}
             </div>
           );
@@ -128,14 +249,16 @@ function StepIndicator({ step }: { step: Step }) {
  *  product-configuration sub-step is substantial enough to want the full
  *  screen and a real URL, not a modal stacked over the Orders list. Review
  *  is purely a client-side summary — nothing new to fetch or save, it just
- *  holds the actual commit actions ("Place order" / "Save as draft") behind
- *  one more confirmation once there's something to confirm. "Save draft"
- *  writes the order as-is (placed_at stays null) and returns to the list —
- *  it'll show up there to resume later (tap it — see orders-view.tsx linking
- *  to `/orders/new?draft=<id>`, which reopens this straight at the Items
- *  step via the `resume` prop, same as before Review existed). "Place order"
- *  is the same action with `place: true`, which also redirects to the order
- *  detail page. */
+ *  holds "Place order" (`saveOrderAction` with `place: true`, which redirects
+ *  to the order detail page).
+ *
+ *  Nothing is written until then. Leaving the wizard with unsaved work —
+ *  the top-bar back, the tab bar (guarded via src/lib/navigation-guard), a
+ *  refresh — prompts to "Save as draft" first. That's the only way a draft
+ *  is created now: an interrupted order, not a deliberate lesser one. A
+ *  draft is the order as-is with `placed_at` null; it shows in the Orders
+ *  list and reopens here via `/orders/new?draft=<id>` (the `resume` prop),
+ *  landing straight on Items. */
 export function NewOrderWizard({
   customers,
   customerTotal,
@@ -164,17 +287,36 @@ export function NewOrderWizard({
   const [newProductDescription, setNewProductDescription] = useState("");
   const [newProductPrice, setNewProductPrice] = useState("");
   const [newProductSourceUrl, setNewProductSourceUrl] = useState("");
+  // One optional Modifier, same as /products/new — enough to capture "the
+  // red one in size M" while it's being asked for. A second Modifier is
+  // catalog work for the product's own page.
+  const [newProductModifierName, setNewProductModifierName] = useState("");
+  const [newProductModifierOptions, setNewProductModifierOptions] = useState<string[]>([]);
   // Products created inline during this wizard run. The `products` prop is a
   // server snapshot taken when the route rendered; a product created here
   // has to join the list the Items step is filtering over without a
   // navigation, or the thing you just made isn't there to add.
   const [extraProducts, setExtraProducts] = useState<WizardProduct[]>([]);
 
-  const [cart, setCart] = useState<CartLine[]>([]);
+  // Resuming a draft hydrates its pending items straight into the cart —
+  // there's no separate "already saved" list; everything here is editable.
+  const hydrateResumedCart = () =>
+    (resume?.items ?? []).map((it, i): CartLine => ({ key: `resumed-${i}`, ...it }));
+  const [cart, setCart] = useState<CartLine[]>(hydrateResumedCart);
+  const [initialCartSig] = useState(() => cartSignature(hydrateResumedCart()));
   const [notes, setNotes] = useState(resume?.notes ?? "");
   const [picking, setPicking] = useState<WizardProduct | null>(null);
   const [selections, setSelections] = useState<Record<string, string>>({});
   const [qty, setQty] = useState(1);
+  // The order so far lives in a panel behind the running-total line in the
+  // footer, so the catalog keeps the whole screen no matter how long the
+  // order gets.
+  const [orderPanelOpen, setOrderPanelOpen] = useState(false);
+  const [confirmDeleteDraft, setConfirmDeleteDraft] = useState(false);
+  // Where a blocked navigation was trying to go — non-null means the
+  // "leave without saving?" dialog is open. "" stands for "just close the
+  // dialog" cases that shouldn't be reachable.
+  const [leaveTo, setLeaveTo] = useState<string | null>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -239,23 +381,34 @@ export function NewOrderWizard({
   const matchingProducts = allProducts.filter((p) => p.name.toLowerCase().includes(productQuery.toLowerCase()));
   const visibleProducts = productQuery ? matchingProducts : matchingProducts.slice(0, PRODUCT_BROWSE_CAP);
   const hiddenProductCount = matchingProducts.length - visibleProducts.length;
-  const existingItems = resume?.existingItems ?? [];
-  const totalItemCount = existingItems.length + cart.length;
-  // Cart lines only carry a productId, existing (resumed) lines carry their
-  // own price straight from the DB — either way, a null price (product has
-  // none set) can't be assumed to be 0, so it's tracked separately rather
-  // than silently under-totaling.
+  const totalItemCount = cart.length;
+  // Each line carries its own price — a null one (product has none set)
+  // can't be assumed to be 0, so it's tracked separately rather than
+  // silently under-totaling.
   let priceTotal = 0;
   let hasUnpricedItem = false;
-  for (const line of existingItems) {
+  for (const line of cart) {
     if (line.price == null) hasUnpricedItem = true;
     else priceTotal += Number(line.price) * line.quantity;
   }
-  for (const line of cart) {
-    const price = allProducts.find((p) => p.id === line.productId)?.price;
-    if (price == null) hasUnpricedItem = true;
-    else priceTotal += Number(price) * line.quantity;
-  }
+  // New products all carry a price now, but the catalog still holds
+  // older ones that don't, and a resumed draft can too. With nothing on
+  // the order priced there's no figure worth showing — the docket drops
+  // the amount column and just carries line counts.
+  const showAmounts = priceTotal > 0;
+  const totalText = `${priceTotal.toLocaleString()} MMK${hasUnpricedItem ? "+" : ""}`;
+
+  // Is there work that would be lost by leaving? A fresh order is dirty once
+  // a customer is picked or anything is typed; a resumed draft once its
+  // items or notes differ from what was saved. Never while a save is
+  // already in flight.
+  const dirty =
+    !isPending &&
+    (resume
+      ? cartSignature(cart) !== initialCartSig || notes.trim() !== (resume.notes ?? "").trim()
+      : cart.length > 0 || customer !== null || notes.trim().length > 0);
+  // A draft still needs a customer to save against.
+  const canSaveDraft = customer !== null;
 
   function handleCreateCustomer() {
     setError(null);
@@ -271,10 +424,10 @@ export function NewOrderWizard({
   }
 
   /** Mirrors handleCreateCustomer: create, drop the row into local state,
-   *  and land the agent where they can immediately use it. Here that means
-   *  opening the new product's picker straight away — it has no modifiers,
-   *  so "Add item" is live on the spot and the only remaining decision is
-   *  quantity. */
+   *  and land the agent where they can immediately use it — the new
+   *  product's picker opens straight away. If a Modifier was entered the
+   *  picker opens on its options (and "Add item" waits for a choice); if
+   *  not, quantity is the only remaining decision and "Add item" is live. */
   function handleCreateProduct() {
     setError(null);
     startTransition(async () => {
@@ -284,14 +437,18 @@ export function NewOrderWizard({
           description: newProductDescription,
           price: newProductPrice,
           sourceUrl: newProductSourceUrl,
+          modifierName: newProductModifierName,
+          modifierOptions: newProductModifierOptions,
         });
-        const product: WizardProduct = { ...created, modifierGroups: [] };
+        const product: WizardProduct = created;
         setExtraProducts((prev) => [product, ...prev]);
         setAddingProduct(false);
         setNewProductName("");
         setNewProductDescription("");
         setNewProductPrice("");
         setNewProductSourceUrl("");
+        setNewProductModifierName("");
+        setNewProductModifierOptions([]);
         // Narrow the list to the new product rather than clearing the
         // query. Cleared, it lands wherever the refreshed catalog sorts it —
         // for anything past the third product that is below the fold, with
@@ -325,24 +482,125 @@ export function NewOrderWizard({
 
   function commitItem() {
     if (!picking) return;
-    const modifierOptionIds = picking.modifierGroups.map((g) => {
+    const product = picking;
+    const modifierOptionIds = product.modifierGroups.map((g) => {
       const value = selections[g.id];
       return g.options.find((o) => o.value === value)!.id;
     });
-    setCart((prev) => [
-      ...prev,
-      {
-        key: `${picking.id}-${Date.now()}`,
-        productId: picking.id,
-        productName: picking.name,
-        selection: picking.modifierGroups.map((g) => selections[g.id]).filter(Boolean),
-        modifierOptionIds,
-        quantity: qty,
-      },
-    ]);
+    // Same product, same options = the same line — a second "Add item" bumps
+    // its quantity rather than stacking a duplicate row. Options compared as
+    // a set so order can't matter.
+    const lineKey = (productId: string, ids: string[]) => `${productId}::${[...ids].sort().join(",")}`;
+    const thisKey = lineKey(product.id, modifierOptionIds);
+    setCart((prev) => {
+      const existing = prev.findIndex((line) => lineKey(line.productId, line.modifierOptionIds) === thisKey);
+      if (existing !== -1) {
+        return prev.map((line, i) => (i === existing ? { ...line, quantity: line.quantity + qty } : line));
+      }
+      return [
+        ...prev,
+        {
+          key: `${product.id}-${Date.now()}`,
+          productId: product.id,
+          productName: product.name,
+          price: product.price,
+          selection: product.modifierGroups.map((g) => selections[g.id]).filter(Boolean),
+          modifierOptionIds,
+          quantity: qty,
+        },
+      ];
+    });
     setPicking(null);
     setSelections({});
     setQty(1);
+  }
+
+  function setOrderLineQty(key: string, quantity: number) {
+    setCart((prev) => prev.map((line) => (line.key === key ? { ...line, quantity } : line)));
+  }
+
+  function removeOrderLine(key: string) {
+    const next = cart.filter((line) => line.key !== key);
+    setCart(next);
+    if (next.length === 0) setOrderPanelOpen(false);
+  }
+
+  /** A line's extended price, formatted, or "—" when the product has no set
+   *  price. No currency suffix — the docket carries it once, on the total. */
+  function lineAmount(productPrice: string | null, quantity: number): string {
+    return productPrice == null ? "—" : (Number(productPrice) * quantity).toLocaleString();
+  }
+
+  // Every path out of the wizard that isn't "Place order" goes through here:
+  // the top-bar back, the Items step's Previous when resuming, and (via the
+  // guard armed below) the tab bar. If there's unsaved work it opens the
+  // dialog instead of navigating; otherwise it just goes.
+  function leaveWizard(destination: string) {
+    if (dirty) setLeaveTo(destination);
+    else router.push(destination);
+  }
+
+  // While there's unsaved work, arm the shared guard (catches the tab bar's
+  // Links) and the browser's own unload prompt (catches refresh / close /
+  // hard navigation, where only the native dialog is possible).
+  useEffect(() => {
+    if (!dirty) return;
+    const onLeave = (destination: string | null) => setLeaveTo(destination ?? "/orders");
+    armNavigationGuard(onLeave);
+    const onBeforeUnload = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => {
+      disarmNavigationGuard(onLeave);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+    };
+  }, [dirty]);
+
+  function discardAndLeave() {
+    const destination = leaveTo ?? "/orders";
+    setLeaveTo(null);
+    // router.push doesn't route through the Link guard, so this isn't
+    // re-caught; the guard is torn down by the effect cleanup on unmount.
+    router.push(destination);
+  }
+
+  function saveDraftAndLeave() {
+    setLeaveTo(null);
+    handleSave(false); // writes the draft, then routes to /orders itself
+  }
+
+  function handleDeleteDraft() {
+    if (!resume) return;
+    setConfirmDeleteDraft(false);
+    setError(null);
+    startTransition(async () => {
+      try {
+        await deleteDraftAction(resume.orderId); // redirects to /orders
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Couldn't delete that draft.");
+      }
+    });
+  }
+
+  // Free movement between steps, driven by the progress indicator. Only the
+  // two data-entry sub-steps are torn down; every field of wizard state —
+  // the chosen customer, the cart, the notes, a half-typed new customer or
+  // product — is left exactly as it was, so a jump is never a reset.
+  function jumpToStep(target: Step) {
+    setAddingCustomer(false);
+    setAddingProduct(false);
+    setPicking(null);
+    setStep(target);
+  }
+
+  // Which pips the indicator turns into buttons. A completed step is always
+  // revisitable; a step ahead unlocks only once its prerequisite exists —
+  // Items needs a customer, Review needs a customer and at least one line.
+  // A resumed draft keeps its customer fixed (same rule as the Items step's
+  // "Previous" button), so that pip stays inert.
+  function stepReachable(target: Step): boolean {
+    if (target === "customer") return !resume;
+    if (target === "items") return customer !== null;
+    return customer !== null && totalItemCount > 0;
   }
 
   function handleSave(place: boolean) {
@@ -371,11 +629,10 @@ export function NewOrderWizard({
 
   let title = "New order";
   let eyebrow = "Customer";
-  // Default (Customer step, and Items below): back leaves the wizard route
-  // entirely, back to the Orders list — there's nothing "behind" Customer to
-  // step to within the wizard itself. Items also has its own inline "Change
-  // customer" link for stepping back a wizard step without leaving the route.
-  let onBack: (() => void) | undefined = () => router.push("/orders");
+  // The top-bar back leaves the wizard for the Orders list, from every step —
+  // stepping backwards is the footer's "Previous" and the progress indicator.
+  // The two data-entry sub-steps override this to close themselves instead.
+  let onBack: (() => void) | undefined = () => leaveWizard("/orders");
   let body;
   let footer;
 
@@ -408,12 +665,30 @@ export function NewOrderWizard({
                 variant="solid"
                 onClick={() => {
                   setAddingCustomer(true);
-                  setNewCustomerName(customerQuery);
+                  // Seed the name from the search, but never over a name
+                  // already typed — you may be coming back to this form.
+                  setNewCustomerName((prev) => prev || customerQuery);
                 }}
               />
             }
           />
         </div>
+        {/* When you've stepped back to this screen the chosen customer is
+            still set — surface it, checked, so "my selection is gone" is
+            never a question. Pinned only when it isn't already one of the
+            rows below (a large table, or a narrowed search). */}
+        {customer && !visibleMatches.some((c) => c.id === customer.id) ? (
+          <div className="min-w-0">
+            <SectionHeader>Selected</SectionHeader>
+            <CustomerRow
+              name={customer.name}
+              phone={customer.phone}
+              address={customer.address}
+              onClick={() => setStep("items")}
+              right={<Icon name="check" size={16} color="var(--color-accent-text)" />}
+            />
+          </div>
+        ) : null}
         <div className={customerSearching ? "opacity-55 transition-opacity duration-fast ease-standard" : "transition-opacity duration-fast ease-standard"}>
           {visibleMatches.map((c) => (
             <CustomerRow
@@ -425,6 +700,7 @@ export function NewOrderWizard({
                 setCustomer(c);
                 setStep("items");
               }}
+              right={c.id === customer?.id ? <Icon name="check" size={16} color="var(--color-accent-text)" /> : undefined}
             />
           ))}
         </div>
@@ -437,7 +713,7 @@ export function NewOrderWizard({
           <EmptyState
             icon="users"
             title="No match."
-            body={`Nobody called “${customerQ}”. Add them with the + above.`}
+            body={`Nobody called “${clipQuery(customerQ)}”. Add them with the + above.`}
           />
         ) : null}
         {hiddenMatchCount > 0 ? (
@@ -447,15 +723,22 @@ export function NewOrderWizard({
         ) : null}
       </div>
     );
-    // Only the create sub-step has a footer. "+ New customer" used to live
-    // here as a full-width pinned button, because it had gone unreachable
-    // below a long customer list — but that list is capped at BROWSE_CAP
-    // now, and the button has moved to the top of the body beside the search
-    // it belongs to, which is above the fold rather than merely pinned. With
-    // it gone there is no second action on this step (picking a customer
-    // advances), so the footer goes too and the list gets the height back.
-    // Back is still a real, equally-weighted button in the sub-step, not the
-    // small inline text link it once was.
+    // "+ New customer" used to live here as a full-width pinned button,
+    // because it had gone unreachable below a long customer list — but that
+    // list is capped at BROWSE_CAP now, and the button has moved to the top
+    // of the body beside the search it belongs to. Back in the sub-step is
+    // still a real, equally-weighted button, not the small inline text link
+    // it once was.
+    //
+    // The footer carries "Continue to items" only once a customer is
+    // chosen — which, thanks to the pick-to-advance shortcut, means you got
+    // here by stepping back. It's the forward half of the pair the other
+    // steps already have, and its presence is the signal that the earlier
+    // choice survived the trip back.
+    //
+    // In the create sub-step the top-bar back arrow mirrors the footer's
+    // Back: it steps back to the customer search, not out of the wizard.
+    if (addingCustomer) onBack = () => setAddingCustomer(false);
     footer = addingCustomer ? (
       <div className="flex gap-2">
         <Button variant="secondary" icon="arrow-left" onClick={() => setAddingCustomer(false)}>
@@ -471,10 +754,17 @@ export function NewOrderWizard({
           {isPending ? "Creating…" : "Create customer"}
         </Button>
       </div>
+    ) : customer ? (
+      <Button full iconAfter="chevron-right" onClick={() => setStep("items")} className="rounded-full shadow-raised">
+        Continue to items
+      </Button>
     ) : null;
   } else if (step === "items") {
     title = customer?.name ?? "Items";
     eyebrow = "Items";
+    // Product sub-step closes itself; otherwise the default (leave the
+    // wizard) stands.
+    if (addingProduct) onBack = () => setAddingProduct(false);
     body = addingProduct ? (
       // Same shape as the Customer step's inline create: the step's body
       // becomes the form and its footer becomes Back / Create, rather than a
@@ -484,18 +774,9 @@ export function NewOrderWizard({
           <Input icon="package" autoComplete="off" placeholder="Denim jacket" value={newProductName} onChange={(e) => setNewProductName(e.target.value)} />
         </Field>
         <Field label="Description" required>
-          <Textarea icon="align-left" rows={2} placeholder="Colour, fabric, fit — anything the customer should know" value={newProductDescription} onChange={(e) => setNewProductDescription(e.target.value)} />
+          <Textarea rows={3} placeholder="Colour, fabric, fit — anything the customer should know" value={newProductDescription} onChange={(e) => setNewProductDescription(e.target.value)} />
         </Field>
-        <Field label="Source URL" hint="Link to the exact Lazada/TikTok Shop listing.">
-          <Input
-            type="url"
-            icon="link"
-            placeholder="https://…"
-            value={newProductSourceUrl}
-            onChange={(e) => setNewProductSourceUrl(e.target.value)}
-          />
-        </Field>
-        <Field label="Price" hint="Optional, MMK">
+        <Field label="Price" required>
           <Input
             type="number"
             inputMode="decimal"
@@ -508,36 +789,55 @@ export function NewOrderWizard({
             onChange={(e) => setNewProductPrice(e.target.value)}
           />
         </Field>
+        <Field label="Source URL" hint="Link to the exact Lazada/TikTok Shop listing.">
+          <Input
+            type="url"
+            icon="link"
+            placeholder="https://…"
+            value={newProductSourceUrl}
+            onChange={(e) => setNewProductSourceUrl(e.target.value)}
+          />
+        </Field>
+
+        {/* One optional Modifier, same layout as /products/new. Filled in,
+            it's created and attached with the product, and the picker that
+            opens next lands straight on its options. */}
+        <div className="grid gap-4 rounded-md border border-line-hairline p-3">
+          <div className="grid gap-1">
+            <span className="font-mono text-label tracking-label uppercase text-text-faint">Modifier (optional)</span>
+            <p className="font-ui text-small text-text-faint">
+              One thing that varies, and its choices — you&rsquo;ll pick one for this line next.
+            </p>
+          </div>
+          <Field label="Name" hint="What varies — size, colour, material">
+            <Input
+              icon="tag"
+              autoComplete="off"
+              placeholder="Colour"
+              value={newProductModifierName}
+              onChange={(e) => setNewProductModifierName(e.target.value)}
+            />
+          </Field>
+          <Field label="Options" hint="Press Enter after each">
+            <TagInput
+              icon="list"
+              placeholder="Black, White, Red"
+              value={newProductModifierOptions}
+              onChange={setNewProductModifierOptions}
+            />
+          </Field>
+        </div>
+
         <p className="font-ui text-small text-text-faint">
-          Photos and modifiers can be added on the product&rsquo;s own page later — neither is needed to put it on this order.
+          Photos, and any further modifiers, can be added on the product&rsquo;s own page later — neither is needed to put it on this order.
         </p>
       </div>
     ) : (
       <div className="grid gap-3">
-        {/* The order so far — its items, then its notes. Notes belongs with
-            these and not at the foot of the step: it annotates the order,
-            and sitting last it ended up directly under whatever the product
-            search produced, so against an empty result it read as a note
-            about the product that couldn't be found. It also only appears
-            once something is on the order, since there's nothing to annotate
-            before that and a lone notes box above an untouched catalog is
-            the first thing you'd have to scroll past. */}
-        {totalItemCount ? (
-          <>
-            <div className="min-w-0">
-              <SectionHeader right={`${totalItemCount} items`}>On this order</SectionHeader>
-              {existingItems.map((line, i) => (
-                <OrderItemRow key={`existing-${i}`} product={line.productName} selection={line.selection} qty={line.quantity} status="Pending" />
-              ))}
-              {cart.map((line) => (
-                <OrderItemRow key={line.key} product={line.productName} selection={line.selection} qty={line.quantity} status="Pending" />
-              ))}
-            </div>
-            <Field className="px-5" label="Notes" hint="Optional — anything the Supplier should know">
-              <Textarea icon="align-left" rows={2} placeholder="Anything the Supplier should know" value={notes} onChange={(e) => setNotes(e.target.value)} />
-            </Field>
-          </>
-        ) : null}
+        {/* Just the catalog. What's already on the order lives in a sheet
+            behind the pinned bar in the footer, so adding the 12th item
+            doesn't mean scrolling past the first 11 — and Notes lives on
+            Review. This step is only "find and add products". */}
 
         {/* Search and "new product" are one row: the moment you find out a
             product isn't in the catalog is the moment you want to add it,
@@ -556,7 +856,7 @@ export function NewOrderWizard({
                 variant="solid"
                 onClick={() => {
                   setAddingProduct(true);
-                  setNewProductName(productQuery);
+                  setNewProductName((prev) => prev || productQuery);
                 }}
               />
             }
@@ -566,7 +866,7 @@ export function NewOrderWizard({
           <EmptyState
             icon="package"
             title="No match."
-            body={`Nothing in the catalog called “${productQuery}”. Add it with the + above.`}
+            body={`Nothing in the catalog called “${clipQuery(productQuery.trim())}”. Add it with the + above.`}
           />
         ) : null}
         {allProducts.length ? (
@@ -596,7 +896,7 @@ export function NewOrderWizard({
                     <Field label="Quantity" group>
                       <QtyDial value={qty} onChange={setQty} min={1} />
                     </Field>
-                    <Button full icon="plus" disabled={!allSelected} onClick={commitItem} className="rounded-full shadow-raised">
+                    <Button full icon="notebook-pen" disabled={!allSelected} onClick={commitItem} className="rounded-full shadow-raised">
                       Add item
                     </Button>
                   </div>
@@ -622,7 +922,7 @@ export function NewOrderWizard({
         <Button
           full
           icon="plus"
-          disabled={!newProductName || !newProductDescription || isPending}
+          disabled={!newProductName.trim() || !newProductDescription.trim() || !newProductPrice.trim() || isPending}
           onClick={handleCreateProduct}
           className="flex-1 rounded-full shadow-raised"
         >
@@ -630,18 +930,40 @@ export function NewOrderWizard({
         </Button>
       </div>
     ) : (
-      <div className="grid gap-2">
+      <div className="grid gap-3">
+        {totalItemCount ? (
+          // A plain tappable row — surface, label, summary, chevron — so it
+          // reads as "open the order", not as a caption. Opens the panel.
+          <button
+            type="button"
+            onClick={() => setOrderPanelOpen(true)}
+            className="flex w-full items-center justify-between gap-3 rounded-md border border-line-hairline bg-surface-raised px-4 py-3 text-left transition-transform duration-fast ease-standard active:scale-[0.985]"
+          >
+            <span className="flex min-w-0 items-center gap-2.5">
+              <Icon name="clipboard-list" size={16} className="shrink-0 text-text-muted" />
+              <span className="truncate font-ui text-body-strong text-text-strong">
+                {totalItemCount === 1 ? "Order item" : "Order items"}
+              </span>
+            </span>
+            <span className="flex items-center gap-3">
+              <span className="font-ui text-small text-text-muted [font-variant-numeric:tabular-nums]">{totalItemCount}</span>
+              {showAmounts ? (
+                <span className="font-ui text-small-strong text-text-strong [font-variant-numeric:tabular-nums]">
+                  {totalText}
+                </span>
+              ) : null}
+              <Icon name="chevron-right" size={16} className="text-text-faint" />
+            </span>
+          </button>
+        ) : null}
         <div className="flex gap-2">
-          <Button variant="secondary" icon="arrow-left" onClick={() => (resume ? router.push("/orders") : setStep("customer"))}>
+          <Button variant="secondary" icon="arrow-left" onClick={() => (resume ? leaveWizard("/orders") : setStep("customer"))}>
             Previous
           </Button>
           <Button full iconAfter="chevron-right" disabled={!totalItemCount} onClick={() => setStep("review")} className="flex-1 rounded-full shadow-raised">
             Review order
           </Button>
         </div>
-        <Button full variant="secondary" icon="clock" disabled={isPending} onClick={() => handleSave(false)}>
-          Save as draft
-        </Button>
       </div>
     );
   } else {
@@ -649,7 +971,8 @@ export function NewOrderWizard({
     // (existingItems + cart + notes); nothing here has been saved yet.
     title = customer?.name ?? "Review";
     eyebrow = "Review";
-    onBack = () => setStep("items");
+    // Top-bar back leaves the wizard (default); "Previous" in the footer is
+    // the way back to Items.
     body = (
       <div className="grid gap-3">
         <div className="min-w-0">
@@ -659,51 +982,46 @@ export function NewOrderWizard({
         </div>
 
         <div className="min-w-0">
-          <SectionHeader right={`${totalItemCount} items`}>Items</SectionHeader>
-          {existingItems.map((line, i) => (
-            <OrderItemRow key={`existing-${i}`} product={line.productName} selection={line.selection} qty={line.quantity} status="Pending" />
-          ))}
+          <SectionHeader right={`${totalItemCount} item${totalItemCount === 1 ? "" : "s"}`}>Order</SectionHeader>
           {cart.map((line) => (
-            <OrderItemRow key={line.key} product={line.productName} selection={line.selection} qty={line.quantity} status="Pending" />
+            <div key={line.key} className="border-b border-line-hairline px-5 py-3 last:border-b-0">
+              <OrderLine
+                name={line.productName}
+                options={line.selection}
+                quantity={line.quantity}
+                amount={showAmounts ? lineAmount(line.price, line.quantity) : null}
+              />
+            </div>
           ))}
           <div className="flex items-baseline justify-between px-5 pt-3">
-            <span className="font-ui text-body-strong text-text-strong">Total</span>
-            <span className="font-ui text-body-strong text-text-strong [font-variant-numeric:tabular-nums]">
-              {priceTotal.toLocaleString()} MMK{hasUnpricedItem ? "+" : ""}
+            <span className="font-mono text-label tracking-label uppercase text-text-faint">Total</span>
+            <span
+              className={cn(
+                "font-ui text-body-strong [font-variant-numeric:tabular-nums]",
+                showAmounts ? "text-text-strong" : "text-text-faint",
+              )}
+            >
+              {showAmounts ? totalText : "Not priced yet"}
             </span>
           </div>
-          {hasUnpricedItem ? (
-            <p className="px-5 pt-0.5 font-ui text-small text-text-faint">One or more items don&rsquo;t have a set price yet — total is a minimum.</p>
-          ) : null}
         </div>
 
-        {/* Read-only recap, not a control — `group` keeps the label a
-            labelled region instead of a `htmlFor` pointing at an id that no
-            element on this step carries. Absent entirely when there are no
-            notes: Review is a list of what's on the order, and a labelled
-            row saying "No notes added." is a line of chrome reporting the
-            absence of something optional. Trimmed, because saveOrderAction
-            stores whitespace-only notes as null — this would otherwise show
-            an empty row for something that won't be saved at all. */}
-        {notes.trim() ? (
-          <Field className="px-5" label="Notes" group>
-            <p className="font-ui text-body text-text-body">{notes}</p>
-          </Field>
-        ) : null}
+        {/* Notes is entered here, not on Items — it annotates the whole
+            order, and the last look before placing it is the natural moment
+            to add "call before delivery". saveOrderAction stores a
+            whitespace-only value as null, so leaving it empty costs nothing. */}
+        <Field className="px-5" label="Notes" hint="Optional — anything the Supplier should know">
+          <Textarea rows={3} placeholder="Anything the Supplier should know" value={notes} onChange={(e) => setNotes(e.target.value)} />
+        </Field>
       </div>
     );
     footer = (
-      <div className="grid gap-2">
-        <div className="flex gap-2">
-          <Button variant="secondary" icon="arrow-left" onClick={() => setStep("items")}>
-            Previous
-          </Button>
-          <Button full icon="check" disabled={!totalItemCount || isPending} onClick={() => handleSave(true)} className="flex-1 rounded-full shadow-raised">
-            {isPending ? "Saving…" : "Place order"}
-          </Button>
-        </div>
-        <Button full variant="secondary" icon="clock" disabled={isPending} onClick={() => handleSave(false)}>
-          Save as draft
+      <div className="flex gap-2">
+        <Button variant="secondary" icon="arrow-left" onClick={() => setStep("items")}>
+          Previous
+        </Button>
+        <Button full icon="check" disabled={!totalItemCount || isPending} onClick={() => handleSave(true)} className="flex-1 rounded-full shadow-raised">
+          {isPending ? "Saving…" : "Place order"}
         </Button>
       </div>
     );
@@ -712,7 +1030,7 @@ export function NewOrderWizard({
   return (
     <Screen>
       <TopBar title={title} eyebrow={eyebrow} onBack={onBack} />
-      <StepIndicator step={step} />
+      <StepIndicator step={step} reachable={stepReachable} onJump={jumpToStep} />
       <ScrollBody>
         {/* No gutter here — Screen's contract is that the body doesn't get
             one, because full-bleed rows carry their own px-5 and it is part
@@ -724,6 +1042,105 @@ export function NewOrderWizard({
       </ScrollBody>
       {footer ? <Foot padded>{footer}</Foot> : null}
       <ErrorDialog open={!!error} message={error} onOk={() => setError(null)} />
+
+      <AlertDialog open={leaveTo !== null} onOpenChange={(open) => !open && setLeaveTo(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{resume ? "Leave this draft?" : "Leave without placing the order?"}</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogBody>
+            <AlertDialogDescription>
+              {resume
+                ? "Your changes to this draft aren't saved yet."
+                : canSaveDraft
+                  ? "Nothing here is saved yet. Save it as a draft to finish later, or leave and lose it."
+                  : "Nothing here is saved yet, and there's no customer to save a draft against — leaving now loses it."}
+            </AlertDialogDescription>
+          </AlertDialogBody>
+          <AlertDialogFooter className="grid gap-2">
+            {canSaveDraft ? (
+              <Button full icon="clock" disabled={isPending} onClick={saveDraftAndLeave}>
+                {resume ? "Save changes" : "Save as draft"}
+              </Button>
+            ) : null}
+            <Button full variant="danger" onClick={discardAndLeave}>
+              {resume ? "Leave without saving" : "Discard and leave"}
+            </Button>
+            <AlertDialogCancel>Keep editing</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={confirmDeleteDraft} onOpenChange={(open) => !open && setConfirmDeleteDraft(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this draft?</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogBody>
+            <AlertDialogDescription>
+              The whole draft and its {totalItemCount} item{totalItemCount === 1 ? "" : "s"} go. This can&rsquo;t be undone.
+            </AlertDialogDescription>
+          </AlertDialogBody>
+          <AlertDialogFooter className="grid gap-2">
+            <Button full variant="danger" disabled={isPending} onClick={handleDeleteDraft}>
+              Delete draft
+            </Button>
+            <AlertDialogCancel>Keep it</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Sheet open={orderPanelOpen} onOpenChange={setOrderPanelOpen}>
+        <SheetContent>
+          <SheetHeader title="Order" />
+          <SheetBody className="pt-1">
+            {customer ? (
+              <p className="pb-2 font-ui text-small text-text-muted">{customer.name}</p>
+            ) : null}
+            {cart.map((line) => (
+              <div key={line.key} className="border-b border-line-hairline py-3 last:border-b-0">
+                <OrderLine
+                  name={line.productName}
+                  options={line.selection}
+                  quantity={line.quantity}
+                  amount={showAmounts ? lineAmount(line.price, line.quantity) : null}
+                  control={
+                    // Decrementing off 1 removes the line — no separate
+                    // delete affordance.
+                    <QtyDial
+                      value={line.quantity}
+                      min={0}
+                      onChange={(n) => (n < 1 ? removeOrderLine(line.key) : setOrderLineQty(line.key, n))}
+                    />
+                  }
+                />
+              </div>
+            ))}
+
+            {resume ? (
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteDraft(true)}
+                className="mt-5 flex w-full items-center justify-center gap-2 rounded-sm border border-line-strong bg-danger-wash py-2.5 font-ui text-small-strong text-danger transition-transform duration-fast ease-standard active:scale-[0.985]"
+              >
+                <Icon name="x" size={15} />
+                Delete this draft
+              </button>
+            ) : null}
+          </SheetBody>
+          <SheetFooter className="flex items-baseline justify-between">
+            <span className="font-mono text-label tracking-label uppercase text-text-faint">Total</span>
+            <span
+              className={cn(
+                "font-ui text-body-strong [font-variant-numeric:tabular-nums]",
+                showAmounts ? "text-text-strong" : "text-text-faint",
+              )}
+            >
+              {showAmounts ? totalText : "Not priced yet"}
+            </span>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </Screen>
   );
 }

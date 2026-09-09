@@ -41,7 +41,7 @@ export function CustomerRow({
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate font-ui text-body-strong text-text-strong">{name}</span>
-        <span className="block truncate font-ui text-small text-text-muted">{[phone, address].filter(Boolean).join("  ·  ")}</span>
+        <span className="block truncate font-ui text-small text-text-muted">{[phone, address].filter(Boolean).join(", ")}</span>
       </span>
       {right ?? (interactive ? <Icon name="chevron-right" size={16} color="var(--color-text-faint)" /> : null)}
     </Row>

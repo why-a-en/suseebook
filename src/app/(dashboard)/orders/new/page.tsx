@@ -87,36 +87,54 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
       );
     if (!order) return { wizardProducts, resume: undefined };
 
+    // Only still-pending items come back into the wizard — a line the
+    // Supplier has already bought is out of the composer's hands, and a
+    // save here reconciles by deleting-and-reinserting the pending set
+    // (see saveOrder). Non-pending lines stay on the order untouched and
+    // are managed from the order detail page.
     const itemRows = await tx
-      .select({ id: orderItems.id, quantity: orderItems.quantity, productName: products.name, productPrice: products.price })
+      .select({
+        id: orderItems.id,
+        productId: orderItems.productId,
+        quantity: orderItems.quantity,
+        productName: products.name,
+        productPrice: products.price,
+      })
       .from(orderItems)
       .innerJoin(products, eq(products.id, orderItems.productId))
-      .where(eq(orderItems.orderId, order.id));
+      .where(and(eq(orderItems.orderId, order.id), eq(orderItems.status, "pending")));
 
     const itemIds = itemRows.map((r) => r.id);
     const selectionRows =
       itemIds.length === 0
         ? []
         : await tx
-            .select({ orderItemId: orderItemModifiers.orderItemId, value: modifierOptions.value })
+            .select({
+              orderItemId: orderItemModifiers.orderItemId,
+              modifierOptionId: orderItemModifiers.modifierOptionId,
+              value: modifierOptions.value,
+            })
             .from(orderItemModifiers)
             .innerJoin(modifierOptions, eq(modifierOptions.id, orderItemModifiers.modifierOptionId))
             .where(inArray(orderItemModifiers.orderItemId, itemIds));
-    const selectionsByItem = new Map<string, string[]>();
+    const selectionsByItem = new Map<string, { values: string[]; optionIds: string[] }>();
     for (const s of selectionRows) {
-      const list = selectionsByItem.get(s.orderItemId) ?? [];
-      list.push(s.value);
-      selectionsByItem.set(s.orderItemId, list);
+      const entry = selectionsByItem.get(s.orderItemId) ?? { values: [], optionIds: [] };
+      entry.values.push(s.value);
+      entry.optionIds.push(s.modifierOptionId);
+      selectionsByItem.set(s.orderItemId, entry);
     }
 
     const resume: DraftResume = {
       orderId: order.id,
       customer: { id: order.customerId, name: order.customerName, phone: order.customerPhone, address: order.customerAddress },
       notes: order.notes ?? "",
-      existingItems: itemRows.map((r) => ({
+      items: itemRows.map((r) => ({
+        productId: r.productId,
         productName: r.productName,
         price: r.productPrice,
-        selection: selectionsByItem.get(r.id) ?? [],
+        selection: selectionsByItem.get(r.id)?.values ?? [],
+        modifierOptionIds: selectionsByItem.get(r.id)?.optionIds ?? [],
         quantity: r.quantity,
       })),
     };

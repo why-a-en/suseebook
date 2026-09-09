@@ -139,6 +139,12 @@ function InputGroupInput({
     // the dev compiler into an out-of-memory loop.
     <input
       data-slot="input-group-control"
+      // An <input> reports a `size`-based intrinsic width (~20ch by default),
+      // and that width leaks into the min-content of any grid/flex ancestor
+      // even when the input itself carries min-width:0 — enough, in the order
+      // wizard's `grid gap-3`, to blow a filled search field past the screen.
+      // size=1 drops the intrinsic width to ~1ch; `flex-1` still fills.
+      size={1}
       className={cn("flex-1 rounded-none border-0 bg-transparent shadow-none outline-none focus-visible:ring-0", className)}
       {...props}
     />

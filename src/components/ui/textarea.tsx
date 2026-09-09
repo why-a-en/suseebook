@@ -50,6 +50,12 @@ function Textarea({
         className,
       )}
       {...props}
+      // `field-sizing: content` sizes an empty box to its placeholder, which
+      // collapses it below `rows` and makes a multi-line field read as a
+      // cramped single-line input. Hold the floor at `rows` lines (+ the
+      // py-2.5 and border) so it always looks like the textarea it is, then
+      // let content grow it from there.
+      style={{ minHeight: `calc(${rows} * 1lh + 1.25rem + 2px)`, ...props.style }}
     />
   );
 

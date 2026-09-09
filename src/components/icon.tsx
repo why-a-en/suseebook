@@ -1,6 +1,5 @@
 import type { CSSProperties } from "react";
 import {
-  AlignLeft,
   AtSign,
   ArrowLeft,
   Box,
@@ -11,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  ClipboardList,
   Clock,
   Coins,
   ExternalLink,
@@ -28,6 +28,7 @@ import {
   MapPin,
   Minus,
   MoonStar,
+  NotebookPen,
   Package,
   Pencil,
   Phone,
@@ -56,7 +57,6 @@ import {
  * icon.
  */
 const REGISTRY = {
-  "align-left": AlignLeft,
   "arrow-left": ArrowLeft,
   "at-sign": AtSign,
   box: Box,
@@ -67,6 +67,7 @@ const REGISTRY = {
   "chevron-left": ChevronLeft,
   "chevron-right": ChevronRight,
   "chevron-up": ChevronUp,
+  "clipboard-list": ClipboardList,
   clock: Clock,
   coins: Coins,
   "external-link": ExternalLink,
@@ -84,6 +85,7 @@ const REGISTRY = {
   "map-pin": MapPin,
   minus: Minus,
   "moon-star": MoonStar,
+  "notebook-pen": NotebookPen,
   package: Package,
   pencil: Pencil,
   phone: Phone,

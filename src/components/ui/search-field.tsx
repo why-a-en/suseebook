@@ -74,7 +74,12 @@ function SearchField({
       />
 
       {value && onClear ? (
-        <InputGroupAddon align="inline-end">
+        // `mr-0!` cancels the registry addon's `has-[>button]:mr-[-0.45rem]`
+        // optical nudge. With a real button in here that negative margin
+        // pushes the addon's border box ~7px past the group's right edge —
+        // invisible on a wide screen, but on a phone it's enough to make the
+        // whole field overflow its row once the clear button appears.
+        <InputGroupAddon align="inline-end" className="mr-0! pr-1">
           <IconButton icon="x" label="Clear search" size="icon-sm" onClick={onClear} disabled={props.disabled} />
         </InputGroupAddon>
       ) : null}

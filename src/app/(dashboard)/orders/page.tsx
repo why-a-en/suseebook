@@ -34,7 +34,8 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
     from: dateWindow.from?.toISOString() ?? null,
     to: dateWindow.to?.toISOString() ?? null,
     q: params.q ?? "",
-    status: params.status === "draft" || params.status === "placed" ? params.status : "all",
+    // Placed is the default — see DEFAULT_STATUS in orders-view.tsx.
+    status: params.status === "draft" || params.status === "all" ? params.status : "placed",
   };
 
   const page = await fetchOrdersPage(filters, null);

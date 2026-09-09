@@ -57,9 +57,6 @@ export interface OrdersPage {
    *  than a page and seeing whether it arrived — cheaper and more honest
    *  than a COUNT per page, which would have to re-run the whole filter. */
   nextCursor: OrdersCursor | null;
-  /** Only present on the first page (`cursor: null`); paging doesn't change
-   *  it, so later pages don't pay for it. */
-  total?: number;
 }
 
 /** Formatted here on the server rather than in the client component, so the
@@ -226,18 +223,6 @@ export async function fetchOrdersPage(filters: OrdersFilters, cursor: OrdersCurs
     const hasMore = orderRows.length > ORDERS_PAGE_SIZE;
     const pageRows = hasMore ? orderRows.slice(0, ORDERS_PAGE_SIZE) : orderRows;
 
-    // Only the first page pays for this, and only so the header can state a
-    // real total instead of reporting the page size as if it were one.
-    let total: number | undefined;
-    if (!cursor) {
-      const [row] = await tx
-        .select({ value: count() })
-        .from(orders)
-        .innerJoin(customers, eq(customers.id, orders.customerId))
-        .where(scope);
-      total = row?.value ?? 0;
-    }
-
     const orderIds = pageRows.map((o) => o.id);
     // The list needs only each order's item statuses (for the summary line,
     // and its length as the draft count) — not products or modifier
@@ -271,7 +256,6 @@ export async function fetchOrdersPage(filters: OrdersFilters, cursor: OrdersCurs
     return {
       rows,
       nextCursor: hasMore && last ? { createdAt: last.createdAt.toISOString(), id: last.id } : null,
-      total,
     };
   });
 }

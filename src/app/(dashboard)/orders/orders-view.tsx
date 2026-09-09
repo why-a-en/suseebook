@@ -60,7 +60,6 @@ function summarize(statuses: string[]): string {
 export function OrdersView({
   orders,
   nextCursor,
-  total,
   filters,
   canCreate,
   window: dateWindow,
@@ -69,7 +68,6 @@ export function OrdersView({
   /** The first page, rendered by the route. Later pages are appended below. */
   orders: OrderRowData[];
   nextCursor: OrdersCursor | null;
-  total: number;
   /** Exactly what the server filtered by — forwarded verbatim to the
    *  "Load more" action so page 2 can't be filtered differently from page 1. */
   filters: OrdersFilters;
@@ -138,36 +136,16 @@ export function OrdersView({
   // No client-side filtering left — every row here already matched in SQL.
   const filtered = [...orders, ...appended];
 
-  // Was `${orders.length} recent`, which reported the page size as if it were
-  // the total — with 200 orders in the table it said "50 recent". Counts every
-  // row the current filters match, and says how many are on screen once that's
-  // fewer. Rides the subtitle line rather than an eyebrow so the header isn't
-  // three stacked text sizes.
-  const countLabel =
-    filtered.length < total
-      ? `${filtered.length} of ${total}`
-      : `${total} order${total === 1 ? "" : "s"}`;
-
   return (
     <Screen>
       <TopBar
         brand
         title="Orders"
-        // Under the title: the match count, and — for a member who works in
-        // 2+ Stores — the Store scope beside it. Store is *scope* (which
-        // counter's log this is), not a filter, so it's out of the filter row.
-        subtitle={
-          stores.length > 1 ? (
-            <div className="flex items-center gap-3">
-              <StoreScope stores={stores} />
-              <span className="ml-auto shrink-0 font-mono text-label tracking-label uppercase text-text-faint">
-                {countLabel}
-              </span>
-            </div>
-          ) : (
-            <span className="font-mono text-label tracking-label uppercase text-text-faint">{countLabel}</span>
-          )
-        }
+        // The Store scope (which counter's log this is — scope, not a filter,
+        // so it's out of the filter row) for a member who works in 2+ Stores.
+        // The list itself carries the count — its "That's all N" footer, and
+        // "Load more" when there's more.
+        subtitle={stores.length > 1 ? <StoreScope stores={stores} /> : undefined}
         right={
           canCreate ? <IconButton icon="plus" label="New order" href="/orders/new" size="icon-sm" /> : null
         }

@@ -56,7 +56,6 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
     <OrdersView
       orders={page.rows}
       nextCursor={page.nextCursor}
-      total={page.total ?? page.rows.length}
       filters={filters}
       canCreate={canCreate}
       window={dateWindow}

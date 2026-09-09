@@ -8,6 +8,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { SearchField } from "@/components/ui/search-field";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { DateRangeFilter } from "@/components/ui/date-range-filter";
+import { StoreFilter, type StoreOption } from "./store-filter";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Row } from "@/components/ui/row";
 import { Button } from "@/components/ui/button";
@@ -23,16 +24,15 @@ import type { OrdersCursor, OrdersFilters } from "./query";
 // this filters by. The list itself shows each order's date rather than a
 // Draft/Placed chip — the filter above already answers that question, and
 // the per-item summary line answers the more useful one.
-type OrderStatus = "all" | "draft" | "placed";
+type OrderStatus = "draft" | "placed";
 
 const STATUS_SEGMENTS: { value: OrderStatus; label: string }[] = [
   { value: "placed", label: "Placed" },
   { value: "draft", label: "Draft" },
-  { value: "all", label: "All" },
 ];
 
 // Placed is the default view — the finished orders are what the log is
-// mostly for; drafts and "all" are the exceptions you tab to.
+// mostly for; drafts are the exception you tab to.
 const DEFAULT_STATUS: OrderStatus = "placed";
 
 export interface OrderRowData {
@@ -64,6 +64,7 @@ export function OrdersView({
   filters,
   canCreate,
   window: dateWindow,
+  stores,
 }: {
   /** The first page, rendered by the route. Later pages are appended below. */
   orders: OrderRowData[];
@@ -74,6 +75,9 @@ export function OrdersView({
   filters: OrdersFilters;
   canCreate: boolean;
   window: DateWindow;
+  /** Every Store this member is granted. The Store filter renders only when
+   *  there are 2+ — one Store is the whole log. */
+  stores: StoreOption[];
 }) {
   // `shallow: false` on both, which is the change that made search correct.
   // These used to be client-only filters over whatever the fixed 50-row cap
@@ -95,7 +99,7 @@ export function OrdersView({
   });
   const [status, setStatus] = useQueryState<OrderStatus>("status", {
     defaultValue: DEFAULT_STATUS,
-    parse: (v): OrderStatus => (v === "draft" || v === "all" ? v : DEFAULT_STATUS),
+    parse: (v): OrderStatus => (v === "draft" ? "draft" : DEFAULT_STATUS),
     serialize: (v) => (v === DEFAULT_STATUS ? "" : v),
     shallow: false,
     startTransition: startFiltering,
@@ -129,6 +133,7 @@ export function OrdersView({
 
   const rangeLabel = dateWindowSentence(dateWindow);
   const dateFiltered = dateWindow.custom || dateWindow.range !== "all";
+  const storeName = stores.find((s) => s.id === filters.storeId)?.name ?? null;
 
   // No client-side filtering left — every row here already matched in SQL.
   const filtered = [...orders, ...appended];
@@ -159,8 +164,19 @@ export function OrdersView({
           trailing={<DateRangeFilter window={dateWindow} />}
         />
       </Toolbar>
+      {/* Status segments, with the Store filter sharing the row when the
+          member is granted more than one Store — same idea as the date
+          trigger riding the search row above. It stays narrow (icon-only
+          until a Store is picked) so the segments keep their width. */}
       <Toolbar className="pt-0">
-        <SegmentedControl options={STATUS_SEGMENTS} value={status} onChange={(v) => setStatus(v === DEFAULT_STATUS ? null : v)} />
+        <div className="flex items-center gap-2">
+          <div className="min-w-0 flex-1">
+            <SegmentedControl options={STATUS_SEGMENTS} value={status} onChange={(v) => setStatus(v === DEFAULT_STATUS ? null : v)} />
+          </div>
+          {/* Only a member granted 2+ Stores gets the filter — one Store is
+              the whole log, and the row is just the segments then. */}
+          {stores.length > 1 && <StoreFilter stores={stores} />}
+        </div>
       </Toolbar>
       {/* The list is the previous filter's result until the server answers.
           Fading it is what distinguishes "no matches" from "not asked yet" —
@@ -170,15 +186,17 @@ export function OrdersView({
         {filtered.length === 0 ? (
           <EmptyState
             icon="receipt"
-            title={q || dateFiltered || status === "draft" ? "No match." : "No orders yet."}
+            title={q || dateFiltered || status === "draft" || storeName ? "No match." : "No orders yet."}
             body={
               q
                 ? `No orders under that name${rangeLabel ? " " + rangeLabel : ""}.`
                 : status === "draft"
-                  ? `No draft orders${rangeLabel ? " " + rangeLabel : ""}.`
-                  : rangeLabel
-                    ? `No orders ${rangeLabel}.`
-                    : "Log the first one from a customer chat."
+                  ? `No draft orders${storeName ? ` at ${storeName}` : ""}${rangeLabel ? " " + rangeLabel : ""}.`
+                  : storeName
+                    ? `No orders at ${storeName}${rangeLabel ? " " + rangeLabel : ""}.`
+                    : rangeLabel
+                      ? `No orders ${rangeLabel}.`
+                      : "Log the first one from a customer chat."
             }
           />
         ) : (

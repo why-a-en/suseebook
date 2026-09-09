@@ -97,21 +97,19 @@ function NewOrgSheet({
 function NewOrgForm({ onDone }: { onDone: () => void }) {
   const [state, formAction, pending] = useActionState(createOrganizationAction, undefined);
 
-  // On success the sheet stays open: the temporary password is the only way
-  // the new Admin gets in, shown exactly once.
-  if (state?.temporaryPassword) {
+  // On success the sheet stays open on a confirmation — the Admin's sign-in
+  // details have been emailed to them; nothing is shown here to pass on.
+  if (state?.emailedTo) {
     return (
       <>
         <SheetHeader title="Organization created" />
         <SheetBody>
           <div className="grid gap-3">
             <p className="font-ui text-small text-text-body">
-              Slug <code className="font-mono text-code">{state.slug}</code>. Give this
-              password to <span className="font-medium">{state.adminEmail}</span> — it is
-              shown once, and they must replace it on first sign-in.
-            </p>
-            <p className="rounded-md border border-line-hairline bg-surface-raised px-4 py-3 text-center font-mono text-code tracking-label select-all">
-              {state.temporaryPassword}
+              Slug <code className="font-mono text-code">{state.slug}</code>. We&apos;ve
+              emailed sign-in details to{" "}
+              <span className="font-medium">{state.emailedTo}</span> — they set their own
+              password on first sign-in.
             </p>
             <p className="font-ui text-small text-text-faint">
               They&apos;ll set up their first store and team when they log in.

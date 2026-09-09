@@ -41,15 +41,13 @@ function AddStaffStep({ stores }: { stores: Store[] }) {
   const [storeIds, setStoreIds] = useState<string[]>(() => stores.map((s) => s.id));
   const [state, formAction, pending] = useActionState(addFirstStaffAction, undefined);
 
-  if (state?.temporaryPassword) {
+  if (state?.emailedTo) {
     return (
       <div className="grid gap-4">
         <p className="font-ui text-small text-text-body">
-          Give this to <span className="font-medium">{state.email}</span>. It is shown once,
-          and they must replace it the first time they sign in.
-        </p>
-        <p className="rounded-md border border-line-hairline bg-surface-raised px-4 py-3 text-center font-mono text-code tracking-label select-all">
-          {state.temporaryPassword}
+          We&apos;ve emailed sign-in details to{" "}
+          <span className="font-medium">{state.emailedTo}</span>. They&apos;ll set their own
+          password the first time they sign in.
         </p>
         <form action={finishOnboardingAction}>
           <Button full type="submit">

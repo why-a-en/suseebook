@@ -125,6 +125,12 @@ Billing and plans, usage limits, self-serve signup, custom domains,
 per-tenant audit logs, SSO, invitations and password reset. None constrains
 the schema, so postponing them costs nothing.
 
+> **Update ([ADR-0005](./0005-transactional-email.md)):** credential
+> delivery is no longer deferred — the temporary password from ADR-0003 is
+> now emailed via Resend (`suseeos.com`) instead of shown on screen, with
+> the recipient address deliverability-checked first. Still deferred:
+> tenant-facing self-serve signup, and any non-credential email.
+
 > **Update (`feat/platform-console`):** the first slice of the deferred
 > "platform-admin console" now exists as a **separate surface** — `/platform`,
 > its own layout and routes, no tenant chrome. A platform operator has **no

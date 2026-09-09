@@ -4,6 +4,14 @@ status: accepted
 
 # Admin-issued passwords, forced replacement, and no self-service recovery
 
+> **Amended by [ADR-0005](./0005-transactional-email.md).** The generated
+> password is now **emailed** to its owner rather than read off the issuing
+> screen — the address is deliverability-checked first, and the actions no
+> longer return the password to the browser. Everything else below stands:
+> generated-not-chosen, one-time, never stored readable, forced replacement
+> on first sign-in, and **no public self-service reset** (an Admin still
+> decides every reset; email is only how the result is delivered).
+
 Staff accounts are created by their Organization's Admin, who sets the
 password and passes it on directly — there is no invitation email, and
 [ADR-0002](./0002-multi-tenancy-mvp.md) defers one deliberately. That makes

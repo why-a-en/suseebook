@@ -1,7 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdmin, roleLabel } from "@/lib/auth";
+import { assertDeliverableEmail, normalizeEmail } from "@/lib/email/address";
+import { sendCredentialsEmail } from "@/lib/email/send";
 import { withCurrentOrganization } from "@/lib/tenancy";
 import {
   addStaff,
@@ -13,16 +15,14 @@ import {
 import { ServiceError, type AppRole } from "@/services/types";
 
 // Thin wrappers. Every rule lives in src/services/staff.ts; what belongs
-// here is exactly what a service cannot do — check the session, and tell
-// Next.js to re-render. See docs/ARCHITECTURE_ROADMAP.md §4.
+// here is exactly what a service cannot do — check the session, tell Next.js
+// to re-render, and send the credential email (I/O we keep out of the
+// service's transaction). See docs/ARCHITECTURE_ROADMAP.md §4.
 
 export type StaffActionResult = { error?: string };
 
-/** A temporary password, returned once so the Admin can pass it on. */
-export type IssuedPasswordResult = StaffActionResult & {
-  email?: string;
-  temporaryPassword?: string;
-};
+/** On success, the address the credential was emailed to. */
+export type IssuedPasswordResult = StaffActionResult & { emailedTo?: string };
 
 type Ctx = Parameters<Parameters<typeof withCurrentOrganization>[0]>[0];
 
@@ -46,20 +46,54 @@ async function asAdmin<T>(
   }
 }
 
+const SEND_FAILED =
+  "The account was created, but the invitation email failed to send. " +
+  "Use Reset password to try again.";
+
 export async function addStaffAction(
   _prev: IssuedPasswordResult | undefined,
   formData: FormData,
 ): Promise<IssuedPasswordResult> {
+  await requireAdmin();
+
+  const name = String(formData.get("name") ?? "").trim();
+  const email = normalizeEmail(String(formData.get("email") ?? ""));
+
+  // Deliverability first — before the service creates a user for an address
+  // that would only bounce. ServiceError here is a message for the Admin.
+  try {
+    await assertDeliverableEmail(email);
+  } catch (error) {
+    if (error instanceof ServiceError) return { error: error.message };
+    throw error;
+  }
+
   const { value, error } = await asAdmin((ctx) =>
     addStaff(ctx, {
-      name: String(formData.get("name") ?? ""),
-      email: String(formData.get("email") ?? ""),
+      name,
+      email,
       role: String(formData.get("role") ?? "support_agent") as AppRole,
       storeIds: formData.getAll("storeIds").map(String),
     }),
   );
   if (error) return { error };
-  return { email: value!.email, temporaryPassword: value!.temporaryPassword };
+
+  try {
+    await sendCredentialsEmail({
+      to: value!.email,
+      name: value!.name,
+      temporaryPassword: value!.temporaryPassword,
+      context: {
+        kind: "new-staff",
+        organizationName: value!.organizationName,
+        roleLabel: roleLabel(value!.role),
+      },
+    });
+  } catch {
+    return { error: SEND_FAILED };
+  }
+
+  return { emailedTo: value!.email };
 }
 
 export async function resetStaffPasswordAction(
@@ -67,7 +101,22 @@ export async function resetStaffPasswordAction(
 ): Promise<IssuedPasswordResult> {
   const { value, error } = await asAdmin((ctx) => resetStaffPassword(ctx, memberId));
   if (error) return { error };
-  return { email: value!.email, temporaryPassword: value!.temporaryPassword };
+
+  try {
+    await sendCredentialsEmail({
+      to: value!.email,
+      name: value!.name,
+      temporaryPassword: value!.temporaryPassword,
+      context: { kind: "reset", organizationName: value!.organizationName },
+    });
+  } catch {
+    return {
+      error:
+        "The password was reset, but the email failed to send. Try Reset password again.",
+    };
+  }
+
+  return { emailedTo: value!.email };
 }
 
 export async function changeStaffRoleAction(

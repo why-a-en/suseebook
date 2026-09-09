@@ -199,6 +199,48 @@ describe("saveOrder", () => {
     expect(order.placedAt).toBeNull();
   });
 
+  // Fresh users, like the draft-cap tests below: an empty place-attempt now
+  // lands as a draft, so it counts against the cap and would otherwise leak
+  // into the shared user's tally.
+  it("keeps a place with an empty cart as a draft rather than placing it", async () => {
+    const user = await freshUser("empty-place");
+    const { orderId, placed } = await asUser(user, (ctx) =>
+      saveOrder(ctx, { customerId, place: true, items: [] }),
+    );
+    expect(placed).toBe(false);
+
+    const [order] = await asOrg(orgId, ({ tx }) =>
+      tx.select().from(orders).where(eq(orders.id, orderId)),
+    );
+    expect(order.placedAt).toBeNull();
+  });
+
+  it("downgrades a resumed draft to a draft when placed with every item removed", async () => {
+    const user = await freshUser("empty-resume");
+    const { orderId } = await asUser(user, (ctx) =>
+      saveOrder(ctx, {
+        customerId,
+        place: false,
+        items: [{ productId, modifierOptionIds: [], quantity: 1 }],
+      }),
+    );
+
+    const { placed } = await asUser(user, (ctx) =>
+      saveOrder(ctx, { orderId, customerId, place: true, items: [] }),
+    );
+    expect(placed).toBe(false);
+
+    const [order] = await asOrg(orgId, ({ tx }) =>
+      tx.select().from(orders).where(eq(orders.id, orderId)),
+    );
+    expect(order.placedAt).toBeNull();
+
+    const items = await asOrg(orgId, ({ tx }) =>
+      tx.select().from(orderItems).where(eq(orderItems.orderId, orderId)),
+    );
+    expect(items).toHaveLength(0);
+  });
+
   it("reconciles a resumed draft's pending items against the set it's given", async () => {
     const { orderId } = await asOrg(orgId, (ctx) =>
       saveOrder(ctx, {

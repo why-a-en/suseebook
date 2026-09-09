@@ -11,20 +11,20 @@ import { cn } from "@/lib/utils";
 export type StoreOption = { id: string; name: string; status: "active" | "suspended" };
 
 /**
- * The `?store=` filter on the Order log — a compact trigger beside the
- * Placed/Draft segments that opens a sheet listing every Store the member is
- * granted, plus "All stores".
+ * Which Store's log you're looking at — scope, not a filter, so it rides in
+ * the TopBar under the title rather than in the filter row with date and
+ * status. Reads "All stores" until you narrow to one; tapping opens a sheet
+ * of every Store the member is granted.
  *
- * Mirrors DateRangeFilter beside it: collapsed to a single icon square until
- * a Store is chosen, then widened just enough to name it, so search keeps the
- * room it needs one row up. Only rendered for a member granted 2+ Stores
- * (see orders-view) — one Store is the whole log and needs no control.
+ * Only rendered for a member granted 2+ Stores (see orders-view) — with one
+ * Store the log is already that Store and there's nothing to choose.
  *
- * `shallow: false`: a server filter like date and status. The list fetches a
- * capped page, so narrowing by Store in the browser would only ever look
- * inside the newest rows — the round-trip is the point.
+ * The choice lives in `?store=` with `shallow: false`: it's a server filter
+ * like date and status. The list fetches a capped page, so narrowing in the
+ * browser would only ever look inside the newest rows — the round-trip is
+ * the point.
  */
-export function StoreFilter({ stores }: { stores: StoreOption[] }) {
+export function StoreScope({ stores }: { stores: StoreOption[] }) {
   const [store, setStore] = useQueryState("store", {
     defaultValue: "",
     shallow: false,
@@ -33,6 +33,7 @@ export function StoreFilter({ stores }: { stores: StoreOption[] }) {
   const [open, setOpen] = useState(false);
 
   const active = stores.find((s) => s.id === store) ?? null;
+  const label = active ? active.name : "All stores";
 
   function pick(id: string | null) {
     void setStore(id ?? "");
@@ -45,23 +46,21 @@ export function StoreFilter({ stores }: { stores: StoreOption[] }) {
         type="button"
         onClick={() => setOpen(true)}
         aria-haspopup="dialog"
-        aria-label={active ? `Store filter: ${active.name}. Change` : "Filter by store"}
+        aria-label={`Store: ${label}. Change`}
         className={cn(
-          "flex h-(--control-h-md) shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-sm border bg-surface-sunken outline-none",
-          "transition-[background,border-color,box-shadow,scale] duration-fast ease-standard",
-          "hover:border-line-strong active:scale-95 focus-visible:shadow-[var(--focus-ring)]",
-          active ? "max-w-[128px] border-line-strong px-2.5" : "w-(--control-h-md) border-line-hairline",
+          "-mx-1 flex max-w-full items-center gap-1 rounded-xs px-1 py-0.5 outline-none",
+          "text-text-faint transition-[color,scale] duration-fast ease-standard",
+          "hover:text-text-strong active:scale-[0.98] focus-visible:shadow-[var(--focus-ring)]",
         )}
       >
-        <Icon name="store" size={16} color={active ? "var(--color-text-strong)" : "var(--color-text-faint)"} />
-        {active ? (
-          <span className="min-w-0 truncate font-ui text-small-strong text-text-strong">{active.name}</span>
-        ) : null}
+        <Icon name="store" size={13} className="shrink-0" />
+        <span className="min-w-0 truncate font-ui text-small-strong">{label}</span>
+        <Icon name="chevron-down" size={13} className="shrink-0" />
       </button>
 
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent>
-          <SheetHeader title="Filter by store" eyebrow="store" />
+          <SheetHeader title="Store" eyebrow="viewing" />
           <SheetBody>
             {/* Full-bleed rows — cancel the sheet body's gutter so the
                 hairlines run edge to edge, the app's list rhythm. */}

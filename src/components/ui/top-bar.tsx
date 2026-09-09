@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 export function TopBar({
   title,
   eyebrow,
+  subtitle,
   brand = false,
   onBack,
   backHref,
@@ -25,6 +26,10 @@ export function TopBar({
 }: {
   title: string;
   eyebrow?: string;
+  /** A line *below* the title — for a scope control the screen is bound to
+   *  (the Orders log's Store picker), not a second filter. Interactive, so
+   *  it comes from a Client Component caller. */
+  subtitle?: ReactNode;
   brand?: boolean;
   onBack?: () => void;
   backHref?: string;
@@ -46,6 +51,7 @@ export function TopBar({
       <div className="min-w-0 flex-1">
         {eyebrow ? <div className="mb-1 font-mono text-label tracking-label uppercase text-text-faint">{eyebrow}</div> : null}
         <div className="truncate font-ui text-screen-title tracking-screen-title text-text-strong">{title}</div>
+        {subtitle ? <div className="mt-1.5 min-w-0">{subtitle}</div> : null}
       </div>
       {right}
     </header>

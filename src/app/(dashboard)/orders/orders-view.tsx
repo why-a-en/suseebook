@@ -8,7 +8,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { SearchField } from "@/components/ui/search-field";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { DateRangeFilter } from "@/components/ui/date-range-filter";
-import { StoreFilter, type StoreOption } from "./store-filter";
+import { StoreScope, type StoreOption } from "./store-scope";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Row } from "@/components/ui/row";
 import { Button } from "@/components/ui/button";
@@ -138,16 +138,36 @@ export function OrdersView({
   // No client-side filtering left — every row here already matched in SQL.
   const filtered = [...orders, ...appended];
 
+  // Was `${orders.length} recent`, which reported the page size as if it were
+  // the total — with 200 orders in the table it said "50 recent". Counts every
+  // row the current filters match, and says how many are on screen once that's
+  // fewer. Rides the subtitle line rather than an eyebrow so the header isn't
+  // three stacked text sizes.
+  const countLabel =
+    filtered.length < total
+      ? `${filtered.length} of ${total}`
+      : `${total} order${total === 1 ? "" : "s"}`;
+
   return (
     <Screen>
       <TopBar
         brand
         title="Orders"
-        // Was `${orders.length} recent`, which reported the page size as if
-        // it were the total — with 200 orders in the table it said "50
-        // recent". Now it counts every row the current filters match, and
-        // says how many of them are on screen once that's fewer.
-        eyebrow={filtered.length < total ? `${filtered.length} of ${total}` : `${total} order${total === 1 ? "" : "s"}`}
+        // Under the title: the match count, and — for a member who works in
+        // 2+ Stores — the Store scope beside it. Store is *scope* (which
+        // counter's log this is), not a filter, so it's out of the filter row.
+        subtitle={
+          stores.length > 1 ? (
+            <div className="flex items-center gap-3">
+              <StoreScope stores={stores} />
+              <span className="ml-auto shrink-0 font-mono text-label tracking-label uppercase text-text-faint">
+                {countLabel}
+              </span>
+            </div>
+          ) : (
+            <span className="font-mono text-label tracking-label uppercase text-text-faint">{countLabel}</span>
+          )
+        }
         right={
           canCreate ? <IconButton icon="plus" label="New order" href="/orders/new" size="icon-sm" /> : null
         }
@@ -164,19 +184,8 @@ export function OrdersView({
           trailing={<DateRangeFilter window={dateWindow} />}
         />
       </Toolbar>
-      {/* Status segments, with the Store filter sharing the row when the
-          member is granted more than one Store — same idea as the date
-          trigger riding the search row above. It stays narrow (icon-only
-          until a Store is picked) so the segments keep their width. */}
       <Toolbar className="pt-0">
-        <div className="flex items-center gap-2">
-          <div className="min-w-0 flex-1">
-            <SegmentedControl options={STATUS_SEGMENTS} value={status} onChange={(v) => setStatus(v === DEFAULT_STATUS ? null : v)} />
-          </div>
-          {/* Only a member granted 2+ Stores gets the filter — one Store is
-              the whole log, and the row is just the segments then. */}
-          {stores.length > 1 && <StoreFilter stores={stores} />}
-        </div>
+        <SegmentedControl options={STATUS_SEGMENTS} value={status} onChange={(v) => setStatus(v === DEFAULT_STATUS ? null : v)} />
       </Toolbar>
       {/* The list is the previous filter's result until the server answers.
           Fading it is what distinguishes "no matches" from "not asked yet" —

@@ -121,8 +121,8 @@ function AddStaffSheet({
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       {/* The form only exists while the sheet is open, so useActionState is
-          fresh on every open — otherwise the previous submit's generated
-          password would still be on screen the next time it opened. */}
+          fresh on every open — otherwise the previous submit's confirmation
+          would still be on screen the next time it opened. */}
       <SheetContent>
         {open && <AddStaffForm stores={stores} onDone={() => onOpenChange(false)} />}
       </SheetContent>
@@ -138,15 +138,14 @@ function AddStaffForm({ stores, onDone }: { stores: Store[]; onDone: () => void 
   const [storeIds, setStoreIds] = useState<string[]>(() => stores.map((s) => s.id));
   const [state, formAction, pending] = useActionState(addStaffAction, undefined);
 
-  // On success the sheet does NOT close by itself: the temporary password is
-  // the only thing standing between the new hire and their account, it is
-  // shown exactly once, and closing over it would lose it for good.
-  if (state?.temporaryPassword) {
+  // On success the sheet stays open on a confirmation — the new hire's
+  // sign-in details have been emailed to them.
+  if (state?.emailedTo) {
     return (
       <>
         <SheetHeader title="Staff added" />
         <SheetBody>
-          <IssuedPassword email={state.email!} password={state.temporaryPassword} />
+          <InvitationSent email={state.emailedTo} />
         </SheetBody>
         <SheetFooter>
           <Button full onClick={onDone}>
@@ -209,16 +208,17 @@ function AddStaffForm({ stores, onDone }: { stores: Store[]; onDone: () => void 
   );
 }
 
-/** Shown once. Nothing stores this in readable form, here or on the server. */
-function IssuedPassword({ email, password }: { email: string; password: string }) {
+/**
+ * The credential is delivered by email now — see
+ * docs/adr/0005-transactional-email.md. This screen only confirms where it
+ * went; it never holds the password.
+ */
+function InvitationSent({ email }: { email: string }) {
   return (
     <div className="grid gap-3">
       <p className="font-ui text-small text-text-body">
-        Give this to <span className="font-medium">{email}</span>. It is shown once, and
-        they must replace it the first time they sign in.
-      </p>
-      <p className="rounded-md border border-line-hairline bg-surface-raised px-4 py-3 text-center font-mono text-code tracking-label select-all">
-        {password}
+        We&apos;ve emailed sign-in details to <span className="font-medium">{email}</span>.
+        They must choose a new password the first time they sign in.
       </p>
     </div>
   );
@@ -232,10 +232,10 @@ function ManageStaffSheet({
   onClose: () => void;
 }) {
   const [pending, startTransition] = useTransition();
-  const [issued, setIssued] = useState<{ email: string; password: string } | null>(null);
+  const [resetSentTo, setResetSentTo] = useState<string | null>(null);
 
   function close() {
-    setIssued(null);
+    setResetSentTo(null);
     onClose();
   }
 
@@ -252,13 +252,13 @@ function ManageStaffSheet({
     });
   }
 
-  if (issued) {
+  if (resetSentTo) {
     return (
       <Sheet open onOpenChange={(open) => !open && close()}>
         <SheetContent>
-          <SheetHeader title="New password" />
+          <SheetHeader title="New password sent" />
           <SheetBody>
-            <IssuedPassword email={issued.email} password={issued.password} />
+            <InvitationSent email={resetSentTo} />
           </SheetBody>
           <SheetFooter>
             <Button full onClick={close}>
@@ -302,7 +302,7 @@ function ManageStaffSheet({
                         toast.error(result.error);
                         return;
                       }
-                      setIssued({ email: result.email!, password: result.temporaryPassword! });
+                      setResetSentTo(result.emailedTo!);
                     })
                   }
                 >

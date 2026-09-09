@@ -3,6 +3,7 @@ import { db } from "@/db/client";
 import { accounts, members, organizations, users } from "@/db/schema";
 import { isPlatformAdmin } from "@/lib/auth/platform-admins";
 import { hashPassword } from "@/lib/auth/hash";
+import { isValidEmailSyntax } from "@/lib/email/address";
 import { generateTemporaryPassword } from "./password";
 import { ServiceError, type AppRole } from "./types";
 
@@ -255,7 +256,7 @@ export async function createOrganization(input: {
 
   if (!name) throw new ServiceError("Organization name is required.");
   if (!adminName) throw new ServiceError("The Admin's name is required.");
-  if (!adminEmail.includes("@")) throw new ServiceError("Enter a valid Admin email.");
+  if (!isValidEmailSyntax(adminEmail)) throw new ServiceError("Enter a valid Admin email.");
 
   const slug = slugify(name);
   if (!slug) throw new ServiceError("That name has no letters or digits to slugify.");

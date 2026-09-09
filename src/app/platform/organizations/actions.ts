@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { requirePlatformUser } from "@/lib/auth";
+import { assertDeliverableEmail, normalizeEmail } from "@/lib/email/address";
+import { sendCredentialsEmail } from "@/lib/email/send";
 import { createOrganization, setOrganizationStatus } from "@/services/platform";
 import { ServiceError } from "@/services/types";
 
@@ -10,11 +12,10 @@ import { ServiceError } from "@/services/types";
 
 export type PlatformActionResult = { error?: string };
 
-/** The new Admin's one-time password, returned once so we can pass it on. */
+/** On success, the address the new Admin's credentials were emailed to. */
 export type NewOrgResult = PlatformActionResult & {
   slug?: string;
-  adminEmail?: string;
-  temporaryPassword?: string;
+  emailedTo?: string;
 };
 
 export async function createOrganizationAction(
@@ -22,22 +23,43 @@ export async function createOrganizationAction(
   formData: FormData,
 ): Promise<NewOrgResult> {
   await requirePlatformUser();
+
+  const organizationName = String(formData.get("organizationName") ?? "").trim();
+  const adminName = String(formData.get("adminName") ?? "").trim();
+  const adminEmail = normalizeEmail(String(formData.get("adminEmail") ?? ""));
+
+  let created: Awaited<ReturnType<typeof createOrganization>>;
   try {
-    const result = await createOrganization({
-      organizationName: String(formData.get("organizationName") ?? ""),
-      adminName: String(formData.get("adminName") ?? ""),
-      adminEmail: String(formData.get("adminEmail") ?? ""),
-    });
-    revalidatePath("/platform/organizations");
-    return {
-      slug: result.slug,
-      adminEmail: result.adminEmail,
-      temporaryPassword: result.temporaryPassword,
-    };
+    // Before we create anything: is this address even deliverable? A bad one
+    // here is a hard bounce Resend holds against the whole sending domain.
+    await assertDeliverableEmail(adminEmail);
+    created = await createOrganization({ organizationName, adminName, adminEmail });
   } catch (error) {
     if (error instanceof ServiceError) return { error: error.message };
     throw error;
   }
+
+  revalidatePath("/platform/organizations");
+
+  // The credential exists only in memory, right here. If Resend won't take
+  // it, it's gone — the Organization is created but its Admin can't get in
+  // until someone resets the password. Say exactly that.
+  try {
+    await sendCredentialsEmail({
+      to: created.adminEmail,
+      name: adminName,
+      temporaryPassword: created.temporaryPassword,
+      context: { kind: "new-admin", organizationName },
+    });
+  } catch {
+    return {
+      error:
+        "The Organization was created, but its Admin invitation email failed to send. " +
+        "Open the Organization and reset the Admin's password to try again.",
+    };
+  }
+
+  return { slug: created.slug, emailedTo: created.adminEmail };
 }
 
 export async function setOrganizationStatusAction(

@@ -2,7 +2,9 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdmin, roleLabel } from "@/lib/auth";
+import { assertDeliverableEmail, normalizeEmail } from "@/lib/email/address";
+import { sendCredentialsEmail } from "@/lib/email/send";
 import { withCurrentOrganization } from "@/lib/tenancy";
 import { createStore } from "@/services/stores";
 import { addStaff } from "@/services/staff";
@@ -38,7 +40,7 @@ export async function createFirstStoreAction(
 }
 
 export type AddFirstStaffState =
-  | { error?: string; email?: string; temporaryPassword?: string }
+  | { error?: string; emailedTo?: string }
   | undefined;
 
 export async function addFirstStaffAction(
@@ -46,21 +48,47 @@ export async function addFirstStaffAction(
   formData: FormData,
 ): Promise<AddFirstStaffState> {
   await requireAdmin();
+
+  const name = String(formData.get("name") ?? "").trim();
+  const email = normalizeEmail(String(formData.get("email") ?? ""));
+
+  let created: Awaited<ReturnType<typeof addStaff>>;
   try {
-    const result = await withCurrentOrganization((ctx) =>
+    await assertDeliverableEmail(email);
+    created = await withCurrentOrganization((ctx) =>
       addStaff(ctx, {
-        name: String(formData.get("name") ?? ""),
-        email: String(formData.get("email") ?? ""),
+        name,
+        email,
         role: String(formData.get("role") ?? "support_agent") as AppRole,
         storeIds: formData.getAll("storeIds").map(String),
       }),
     );
     revalidatePath("/", "layout");
-    return { email: result.email, temporaryPassword: result.temporaryPassword };
   } catch (error) {
     if (error instanceof ServiceError) return { error: error.message };
     throw error;
   }
+
+  try {
+    await sendCredentialsEmail({
+      to: created.email,
+      name: created.name,
+      temporaryPassword: created.temporaryPassword,
+      context: {
+        kind: "new-staff",
+        organizationName: created.organizationName,
+        roleLabel: roleLabel(created.role),
+      },
+    });
+  } catch {
+    return {
+      error:
+        "The teammate was added, but the invitation email failed to send. " +
+        "You can resend it from Staff with Reset password.",
+    };
+  }
+
+  return { emailedTo: created.email };
 }
 
 export async function finishOnboardingAction() {

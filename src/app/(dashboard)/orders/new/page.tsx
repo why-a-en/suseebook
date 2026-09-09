@@ -69,7 +69,6 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
     const [order] = await tx
       .select({
         id: orders.id,
-        notes: orders.notes,
         customerId: orders.customerId,
         customerName: customers.name,
         customerPhone: customers.phone,
@@ -128,7 +127,6 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
     const resume: DraftResume = {
       orderId: order.id,
       customer: { id: order.customerId, name: order.customerName, phone: order.customerPhone, address: order.customerAddress },
-      notes: order.notes ?? "",
       items: itemRows.map((r) => ({
         productId: r.productId,
         productName: r.productName,

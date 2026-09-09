@@ -62,7 +62,6 @@ export interface WizardProduct {
 export interface DraftResume {
   orderId: string;
   customer: WizardCustomer;
-  notes: string;
   items: { productId: string; productName: string; price: string | null; selection: string[]; modifierOptionIds: string[]; quantity: number }[];
 }
 
@@ -243,7 +242,7 @@ function StepIndicator({
 /** Order creation, as a real multi-step form — Customer, then Items, then
  *  Review — matching docs/PRD.md §7.1: search-or-create the Customer, then
  *  repeatably add products with their modifier selection and quantity,
- *  attach notes to the order as a whole, confirm, save. A dedicated route
+ *  confirm, save. A dedicated route
  *  (`/orders/new`, this component's only mount point — see its page.tsx)
  *  rather than a Sheet dialog: a 3-step form with its own
  *  product-configuration sub-step is substantial enough to want the full
@@ -304,7 +303,6 @@ export function NewOrderWizard({
     (resume?.items ?? []).map((it, i): CartLine => ({ key: `resumed-${i}`, ...it }));
   const [cart, setCart] = useState<CartLine[]>(hydrateResumedCart);
   const [initialCartSig] = useState(() => cartSignature(hydrateResumedCart()));
-  const [notes, setNotes] = useState(resume?.notes ?? "");
   const [picking, setPicking] = useState<WizardProduct | null>(null);
   const [selections, setSelections] = useState<Record<string, string>>({});
   const [qty, setQty] = useState(1);
@@ -400,13 +398,11 @@ export function NewOrderWizard({
 
   // Is there work that would be lost by leaving? A fresh order is dirty once
   // a customer is picked or anything is typed; a resumed draft once its
-  // items or notes differ from what was saved. Never while a save is
-  // already in flight.
+  // items differ from what was saved. Never while a save is already in
+  // flight.
   const dirty =
     !isPending &&
-    (resume
-      ? cartSignature(cart) !== initialCartSig || notes.trim() !== (resume.notes ?? "").trim()
-      : cart.length > 0 || customer !== null || notes.trim().length > 0);
+    (resume ? cartSignature(cart) !== initialCartSig : cart.length > 0 || customer !== null);
   // A draft still needs a customer to save against.
   const canSaveDraft = customer !== null;
 
@@ -583,8 +579,8 @@ export function NewOrderWizard({
 
   // Free movement between steps, driven by the progress indicator. Only the
   // two data-entry sub-steps are torn down; every field of wizard state —
-  // the chosen customer, the cart, the notes, a half-typed new customer or
-  // product — is left exactly as it was, so a jump is never a reset.
+  // the chosen customer, the cart, a half-typed new customer or product — is
+  // left exactly as it was, so a jump is never a reset.
   function jumpToStep(target: Step) {
     setAddingCustomer(false);
     setAddingProduct(false);
@@ -612,7 +608,6 @@ export function NewOrderWizard({
         const result = await saveOrderAction({
           orderId: resume?.orderId,
           customerId: customer.id,
-          notes,
           items: cart.map((line) => ({ productId: line.productId, modifierOptionIds: line.modifierOptionIds, quantity: line.quantity })),
           place,
         });
@@ -968,7 +963,7 @@ export function NewOrderWizard({
     );
   } else {
     // Review — purely a client-side summary of what's already in state
-    // (existingItems + cart + notes); nothing here has been saved yet.
+    // (existingItems + cart); nothing here has been saved yet.
     title = customer?.name ?? "Review";
     eyebrow = "Review";
     // Top-bar back leaves the wizard (default); "Previous" in the footer is
@@ -1005,14 +1000,6 @@ export function NewOrderWizard({
             </span>
           </div>
         </div>
-
-        {/* Notes is entered here, not on Items — it annotates the whole
-            order, and the last look before placing it is the natural moment
-            to add "call before delivery". saveOrderAction stores a
-            whitespace-only value as null, so leaving it empty costs nothing. */}
-        <Field className="px-5" label="Notes" hint="Optional — anything the Supplier should know">
-          <Textarea rows={3} placeholder="Anything the Supplier should know" value={notes} onChange={(e) => setNotes(e.target.value)} />
-        </Field>
       </div>
     );
     footer = (

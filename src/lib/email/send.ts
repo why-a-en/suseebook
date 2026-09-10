@@ -2,9 +2,9 @@ import { Resend } from "resend";
 import { appBaseURL } from "@/lib/app-url";
 
 // Outbound transactional mail, via Resend (docs/adr/0006-transactional-email.md).
-// The only messages this app sends are account credentials — a generated
-// password that used to be read out on screen and is now delivered here
-// instead. Keep this module the single place that talks to Resend.
+// Two messages: an invitation link for someone joining a Store, and (only on
+// an Admin-initiated reset) a generated temporary password. Keep this module
+// the single place that talks to Resend.
 
 const FROM = process.env.EMAIL_FROM ?? "SuSeeOS <support@suseeos.com>";
 
@@ -98,6 +98,51 @@ export async function sendCredentialsEmail(input: {
     from: FROM,
     to: [to],
     subject: subjectFor(context),
+    text,
+    html,
+  });
+
+  if (error) {
+    throw new Error(`Resend refused the message: ${error.name} — ${error.message}`);
+  }
+}
+
+/**
+ * Invites someone to a Store. The link carries the invitation id as its
+ * token; `/invite/accept` re-checks status, expiry and the recipient's email
+ * server-side (docs/adr/0006 §2). The invitee sets their own name and
+ * password — nothing secret is in this email, so a forward is harmless.
+ */
+export async function sendInvitationEmail(input: {
+  to: string;
+  /** The Store they're being invited to. */
+  storeName: string;
+  /** "Admin" / "Support Agent" / "Supplier" — already display-cased. */
+  roleLabel: string;
+  /** The invitation id; becomes `?token=` on the accept link. */
+  token: string;
+  /** Who sent it, for the "you weren't expecting this" line. Optional. */
+  inviterName?: string;
+}): Promise<void> {
+  const { to, storeName, roleLabel, token, inviterName } = input;
+  const url = `${appBaseURL()}/invite/accept?token=${encodeURIComponent(token)}`;
+  const lead = `You've been invited to join ${storeName} on SuSeeOS as ${roleLabel}.`;
+  const tail = inviterName
+    ? `This invite was sent by ${inviterName}. If you weren't expecting it, you can ignore this email.`
+    : "If you weren't expecting this, you can ignore this email.";
+
+  const text = [lead, "", `Accept your invitation: ${url}`, "", "You'll choose your own password when you accept.", tail].join("\n");
+
+  const html = `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:15px;line-height:1.5;color:#1a1a1a;max-width:520px">
+  <p>${escapeHtml(lead)}</p>
+  <p><a href="${escapeHtml(url)}" style="display:inline-block;background:#1a1a1a;color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px">Accept invitation</a></p>
+  <p style="color:#6b6b6b;font-size:13px;margin-top:20px">You'll choose your own password when you accept. ${escapeHtml(tail)}</p>
+</div>`;
+
+  const { error } = await resend().emails.send({
+    from: FROM,
+    to: [to],
+    subject: `Join ${storeName} on SuSeeOS`,
     text,
     html,
   });

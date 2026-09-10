@@ -6,7 +6,16 @@ import { nextCookies } from "better-auth/next-js";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import * as schema from "@/db/schema";
+import { sendInvitationEmail } from "@/lib/email/send";
 import { hashPassword, verifyPassword } from "./hash";
+
+// Display label for a member role. Inlined rather than imported from
+// src/lib/auth/index.ts — that file imports this one.
+const ROLE_LABEL: Record<string, string> = {
+  admin: "Admin",
+  support_agent: "Support Agent",
+  supplier: "Supplier",
+};
 
 // The single better-auth instance. See docs/plans/better-auth-migration.md
 // and docs/adr/0002-multi-tenancy-mvp.md for why this replaced the
@@ -113,6 +122,31 @@ export const auth = betterAuth({
             status: { type: "string", input: false },
           },
         },
+      },
+
+      // Stores are provisioned by a Platform Admin, never self-created by a
+      // tenant user (ADR-0005 §1). This closes the plugin's own create path.
+      allowUserToCreateOrganization: async () => false,
+
+      // Joining a Store is by invitation (ADR-0005 §6, ADR-0006). A link is
+      // valid for 7 days; re-inviting the same address supersedes the old
+      // one rather than leaving two live.
+      invitationExpiresIn: 60 * 60 * 24 * 7,
+      cancelPendingInvitationsOnReInvite: true,
+
+      // The plugin creates the `invitations` row, then calls this to deliver
+      // the link. A throw here propagates to the caller (the Admin's action),
+      // which tells them to use Resend — the row is already committed
+      // (ADR-0006 §5). Kept out of any service transaction by construction:
+      // the plugin fires it after its own write.
+      sendInvitationEmail: async (data) => {
+        await sendInvitationEmail({
+          to: data.email,
+          storeName: data.organization.name,
+          roleLabel: ROLE_LABEL[data.role] ?? data.role,
+          token: data.id,
+          inviterName: data.inviter.user.name,
+        });
       },
     }),
 

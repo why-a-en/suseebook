@@ -11,7 +11,7 @@ import { ServiceError } from "@/services/types";
 // mail", checked in two cheap layers — RFC-5322-ish syntax, then a DNS
 // lookup for a mail exchanger. No SMTP probe (unreliable, and outbound
 // port 25 is blocked on Vercel) and no paid verification API — overkill for
-// an internal tool at this volume. See docs/adr/0005-transactional-email.md.
+// an internal tool at this volume. See docs/adr/0006-transactional-email.md.
 
 // Deliberately stricter than the spec permits: no quoted local parts, no IP
 // literals, no consecutive dots, a real dotted domain. Those forms are legal

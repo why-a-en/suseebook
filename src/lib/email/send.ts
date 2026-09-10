@@ -1,7 +1,7 @@
 import { Resend } from "resend";
 import { appBaseURL } from "@/lib/app-url";
 
-// Outbound transactional mail, via Resend (docs/adr/0005-transactional-email.md).
+// Outbound transactional mail, via Resend (docs/adr/0006-transactional-email.md).
 // The only messages this app sends are account credentials — a generated
 // password that used to be read out on screen and is now delivered here
 // instead. Keep this module the single place that talks to Resend.

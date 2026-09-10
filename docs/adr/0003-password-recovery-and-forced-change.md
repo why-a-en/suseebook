@@ -4,13 +4,15 @@ status: accepted
 
 # Admin-issued passwords, forced replacement, and no self-service recovery
 
-> **Amended by [ADR-0005](./0005-transactional-email.md).** The generated
-> password is now **emailed** to its owner rather than read off the issuing
-> screen — the address is deliverability-checked first, and the actions no
-> longer return the password to the browser. Everything else below stands:
-> generated-not-chosen, one-time, never stored readable, forced replacement
-> on first sign-in, and **no public self-service reset** (an Admin still
-> decides every reset; email is only how the result is delivered).
+> **Amended by [ADR-0005](./0005-store-as-sole-tenant.md) and
+> [ADR-0006](./0006-transactional-email.md).** New accounts no longer get an
+> Admin-issued password at all — they join by **invitation** and set their
+> own (ADR-0005 §6). Everything below now applies only to a **password
+> reset**: an Admin still decides every reset, the password is still
+> generated-not-chosen, one-time, never stored readable, and forces
+> replacement on first sign-in — but it is **emailed** (deliverability-checked
+> first, never returned to the browser) rather than read off a screen. Still
+> **no public self-service reset**.
 
 Staff accounts are created by their Organization's Admin, who sets the
 password and passes it on directly — there is no invitation email, and

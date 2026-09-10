@@ -210,7 +210,7 @@ function AddStaffForm({ stores, onDone }: { stores: Store[]; onDone: () => void 
 
 /**
  * The credential is delivered by email now — see
- * docs/adr/0005-transactional-email.md. This screen only confirms where it
+ * docs/adr/0006-transactional-email.md. This screen only confirms where it
  * went; it never holds the password.
  */
 function InvitationSent({ email }: { email: string }) {

@@ -7,32 +7,38 @@ purchased items to the real Customer once they arrive.
 
 ## Language
 
-**Organization**: The tenant — one business account, fully isolated from
-any other Organization's data. Called "vendor" earlier in this project's
-history; renamed to avoid colliding with the unrelated "Supplier" role
-below.
-_Avoid_: Vendor, tenant, account, business.
+**Store**: The tenant — one shopfront, fully isolated from every other
+Store's data by row-level security (ADR-0005). Its catalog, Customers,
+Orders and staff all belong to exactly one Store. Provisioned by a Platform
+Admin, who invites its first Admin; there is no self-serve signup. Called
+"Organization" earlier in this project's history (ADR-0002), and the
+database column is still `organization_id` for that reason — the two are the
+same thing. A person who works at more than one Store has one login and
+switches between them (Settings); reads and writes always follow the active
+Store.
+_Avoid_: Organization, Vendor, tenant, account, business, branch, outlet,
+shop. Location is fine in conversation.
 
-**Store**: A location within an Organization — the counter an Order,
-Customer or Order Item belongs to. A *tag, not a tenant boundary*: unlike
-Organization, it carries no row-level-security policy, because two Stores
-are the same business with the same staff pool and an Admin routinely
-works across both. The catalog (Products, Modifiers) stays
-Organization-wide; only the transactional records are Store-scoped. A
-member is granted specific Stores (see `member_stores`); with two or more,
-Settings shows a Store switcher. An Organization with no Store is
-non-functional — its Admin is walked through creating the first one at
-`/onboarding` on first login.
-_Avoid_: Branch, outlet, location (fine in conversation), shop.
+**Invitation**: A pending grant of Store membership, sent to an email
+address by an Admin (or, for the first Admin, a Platform Admin). Accepting
+it creates the membership — and, if the email is new to the platform, the
+account. The inviter never sets the invitee's name or password; those are
+the person's own, set when they accept.
+_Avoid_: Invite request, join request.
 
-**Admin**: The staff role that runs an Organization from the inside —
-manages its staff, edits its details, and reads its reports. Access is a
-*superset* of the other two roles, so an Admin who also logs Orders needs
-one account rather than two. Scoped to their own Organization like any
-member: an Admin has no visibility into anyone else's.
+**Admin**: The staff role that runs a Store from the inside — manages its
+catalog and staff, edits its details, reads its reports, and invites team
+members. Access is a *superset* of the other two roles, so an Admin who also
+logs Orders needs one account rather than two. Role is per Store: the same
+person can be Admin at one Store and Support Agent at another.
 _Avoid_: Owner (considered and dropped), superadmin, manager. Not to be
-confused with **platform administration** — that's us operating the
-service, gated by an environment allowlist, and no in-app role grants it.
+confused with **Platform Admin** below.
+
+**Platform Admin**: Us, operating the service. Creates Stores, invites their
+first Admins, and can read across every Store from the `/platform` console.
+Gated by an environment allowlist — no in-app role grants it, and no tenant
+Admin has any of it.
+_Avoid_: Superadmin, root, staff.
 
 **Support Agent**: The staff role that talks to real Customers,
 maintains the Product catalog, logs Orders on their behalf, and packs and
@@ -42,9 +48,9 @@ UI label and this glossary finally agree on one name.
 _Avoid_: Customer Service, CS, CS agent, "agent" on its own.
 
 **Supplier**: The staff role that buys Products from Lazada/TikTok Shop
-against a Customer's Order Item, using the Purchase Queue.
-_Avoid_: Buyer, purchaser. Not to be confused with Organization — a
-near-synonym in plain English, but a distinct concept here.
+against a Customer's Order Item, using the Purchase Queue. One person can be
+a Supplier for several Stores (one login, one membership per Store).
+_Avoid_: Buyer, purchaser.
 
 **Customer**: A real, searchable person who places Orders — a first-class
 entity (name, phone, address), not free text on the Order. Address is
@@ -57,7 +63,7 @@ and the subset of each attached Modifier's Options that apply to it.
 _Avoid_: Item, listing (that's the Lazada/TikTok Shop side — see Source URL
 in DATA_MODEL.md).
 
-**Modifier**: An Organization-wide, reusable attribute type (e.g. "Color",
+**Modifier**: A Store-wide, reusable attribute type (e.g. "Color",
 "Size") with a global list of Options. Attached to whichever Products use
 it; new Modifiers/Options can be created inline while creating a Product.
 _Avoid_: Variant, attribute, option set.

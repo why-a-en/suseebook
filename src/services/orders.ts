@@ -32,6 +32,11 @@ export type SaveOrderInput = {
  * order sits in the list to resume) or placed (`place: true`, at which point
  * every new pending Item shows up in the Purchase Queue per PRD §7.1 step 5).
  * An abandoned wizard that was never saved leaves nothing behind.
+ *
+ * `place: true` with an empty cart is downgraded to a draft — a placed Order
+ * with no items isn't a request anyone can act on, and losing the save
+ * outright is worse than parking it. The returned `placed` reflects what
+ * actually happened, so callers redirect (or not) accordingly.
  */
 export async function saveOrder(
   ctx: ServiceContext,
@@ -44,6 +49,14 @@ export async function saveOrder(
   // hit, not the wrapper.
   if (!ctx.storeId) throw new ServiceError("No active Store — pick one in Settings.");
   const storeId = ctx.storeId;
+
+  // A placed Order is a real request the Supplier works from, so it has to
+  // carry at least one item. A save that asks to place an empty cart isn't
+  // rejected outright — it's kept as a draft, so the work stays there to
+  // resume rather than vanishing. The wizard already blocks this path
+  // (handleSave / the disabled Review button); this is the boundary a bug or
+  // a future non-UI caller would actually hit.
+  const place = input.place && input.items.length > 0;
 
   let id = input.orderId;
   const notes = input.notes?.trim() || null;
@@ -58,7 +71,7 @@ export async function saveOrder(
     // from offering a foreign-Store draft to resume in the first place.
     await ctx.tx
       .update(orders)
-      .set({ notes, ...(input.place ? { placedAt: new Date() } : {}) })
+      .set({ notes, ...(place ? { placedAt: new Date() } : {}) })
       .where(and(eq(orders.id, id), eq(orders.organizationId, ctx.organizationId), eq(orders.storeId, storeId)));
 
     // The wizard hands back the full pending set every save; reconcile by
@@ -79,7 +92,9 @@ export async function saveOrder(
     // Only a brand-new order saved *as a draft* counts against the cap —
     // placing outright never creates a draft in the first place, and updating
     // an already-counted draft (the branch above) isn't starting a new one.
-    if (!input.place) {
+    // An empty place-attempt that fell back to a draft above counts too — it
+    // is a new draft like any other.
+    if (!place) {
       const openDrafts = await ctx.tx
         .select({ id: orders.id })
         .from(orders)
@@ -106,7 +121,7 @@ export async function saveOrder(
         customerId: input.customerId,
         notes,
         createdBy: ctx.userId,
-        placedAt: input.place ? new Date() : null,
+        placedAt: place ? new Date() : null,
       })
       .returning({ id: orders.id });
     id = order.id;
@@ -149,7 +164,7 @@ export async function saveOrder(
     }
   }
 
-  return { orderId: id!, placed: input.place };
+  return { orderId: id!, placed: place };
 }
 
 /**

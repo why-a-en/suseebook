@@ -540,11 +540,20 @@ export const orders = pgTable(
     // so the sort it defines isn't total and a cursor on it drops or repeats
     // rows exactly at a page boundary. Including id here lets Postgres serve
     // the row-wise comparison and the ORDER BY from one index scan. storeId
-    // leads the same way organizationId does — every list this backs is
-    // scoped to one store first.
+    // leads the same way organizationId does — a log scoped to one store rides
+    // this index.
     index("orders_organization_store_created_idx").on(
       table.organizationId,
       table.storeId,
+      table.createdAt,
+      table.id,
+    ),
+    // The cross-store view of the log — an Admin granted 2+ Stores with the
+    // Store filter left on "All stores" — pages by the same keyset with no
+    // single store to lead the scan. This one serves that ORDER BY directly,
+    // where the store-led index above would merge a slice per store.
+    index("orders_organization_created_idx").on(
+      table.organizationId,
       table.createdAt,
       table.id,
     ),

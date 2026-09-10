@@ -13,6 +13,7 @@
     "org:create": "tsx scripts/create-organization.mts",
     "member:add": "tsx scripts/add-membership.mts",
     "platform:add": "tsx scripts/add-platform-admin.mts",
+    "email:test": "tsx scripts/send-test-email.mts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

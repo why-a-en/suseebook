@@ -4,6 +4,14 @@ status: accepted
 
 # Multi-tenancy MVP: identity split from membership, one active Organization per session
 
+> **Amended by [ADR-0005](./0005-store-as-sole-tenant.md).** The tenant is now
+> called a **Store** (the Organization layer was removed); the DB column stays
+> `organization_id`. The identity/membership split, suspension model and
+> impersonation here all still hold — read "Organization" as "Store", and
+> "one active Organization per session" as "one active Store". §6's onboarding
+> and §10's `org:create` are replaced by Platform-Admin provisioning +
+> invitations.
+
 The schema has been multi-tenant since the first migration — `organization_id`
 on every tenant-scoped table, RLS keyed on `app.organization_id`, a
 non-`BYPASSRLS` `app_user` role

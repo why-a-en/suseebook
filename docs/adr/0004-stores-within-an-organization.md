@@ -1,8 +1,14 @@
 ---
-status: accepted
+status: superseded by ADR-0005
 ---
 
 # Stores within an Organization: a scope tag, not a second tenant boundary
+
+> **Superseded by [ADR-0005](./0005-store-as-sole-tenant.md).** The
+> Organization layer was removed: the Store is now the sole tenant, and
+> `stores` / `member_stores` no longer exist. The reasoning below — why a
+> second RLS boundary wasn't worth it — still informed 0005's choice to keep
+> one boundary rather than add a second.
 
 [ADR-0002](./0002-multi-tenancy-mvp.md) made the Organization the tenant —
 absolute isolation, enforced by row-level security. This ADR adds a level

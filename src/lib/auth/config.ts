@@ -2,6 +2,7 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { organization } from "better-auth/plugins/organization";
 import { admin } from "better-auth/plugins/admin";
+import { createAccessControl } from "better-auth/plugins/access";
 import { nextCookies } from "better-auth/next-js";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
@@ -16,6 +17,26 @@ const ROLE_LABEL: Record<string, string> = {
   support_agent: "Support Agent",
   supplier: "Supplier",
 };
+
+// The org plugin validates a role against a static set before it'll write
+// it anywhere (createInvitation, updateMemberRole) — its own defaults are
+// `admin`/`owner`/`member`, none of which are ours. Without this, inviting a
+// support_agent or a supplier throws ROLE_NOT_FOUND; only "admin" ever
+// worked, by coincidentally sharing a name with the plugin's own default.
+// The permissions here are for the plugin's own gate on *its* endpoints
+// (who may invite/manage members) — every actual authorization decision in
+// this app is still requireAdmin() + the service layer, not this.
+const orgAccess = createAccessControl({
+  organization: ["update"],
+  member: ["create", "update", "delete"],
+  invitation: ["create", "cancel"],
+});
+const orgAdminRole = orgAccess.newRole({
+  organization: ["update"],
+  member: ["create", "update", "delete"],
+  invitation: ["create", "cancel"],
+});
+const orgStaffRole = orgAccess.newRole({ organization: [], member: [], invitation: [] });
 
 // The single better-auth instance. See docs/plans/better-auth-migration.md
 // and docs/adr/0002-multi-tenancy-mvp.md for why this replaced the
@@ -127,6 +148,11 @@ export const auth = betterAuth({
       // Stores are provisioned by a Platform Admin, never self-created by a
       // tenant user (ADR-0005 §1). This closes the plugin's own create path.
       allowUserToCreateOrganization: async () => false,
+
+      // Our three role strings, so the plugin's own validation (createInvitation,
+      // updateMemberRole) recognizes support_agent/supplier — see orgAccess above.
+      ac: orgAccess,
+      roles: { admin: orgAdminRole, support_agent: orgStaffRole, supplier: orgStaffRole },
 
       // Joining a Store is by invitation (ADR-0005 §6, ADR-0006). A link is
       // valid for 7 days; re-inviting the same address supersedes the old

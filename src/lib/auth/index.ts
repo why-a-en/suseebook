@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { and, desc, eq, isNull } from "drizzle-orm";
-import { db } from "@/db/client";
+import { db, withOrganizationScope } from "@/db/client";
 import { impersonationEvents, invitations, memberStores, members, organizations, sessions, stores, users } from "@/db/schema";
 import { auth } from "./config";
 import { isPlatformAdmin } from "./platform-admins";
@@ -377,23 +377,25 @@ export async function setActiveStore(storeId: string): Promise<void> {
 // for us — inviting from the caller's *active* Organization, and accepting
 // before or after the invitee has an account.
 
+/** Resolves the request's headers, or uses the ones a caller already has —
+ *  next/headers' own `headers()` throws outside a request scope, which is
+ *  exactly where a test calling these functions directly runs, so every
+ *  wrapper below takes an optional override instead of calling it blind. */
+async function resolveHeaders(override?: Headers): Promise<Headers> {
+  return override ?? (await headers());
+}
+
 /** Sends (or re-sends) an invitation from the caller's active Organization.
  *  requireAdmin() at the call site is the real gate; the plugin's own
- *  permission check (our `admin` role string happens to match its default
- *  `admin` role) is defence in depth, not the primary guard. */
-export async function inviteToOrganization(input: {
-  email: string;
-  role: AppRole;
-}): Promise<{ invitationId: string }> {
+ *  permission check (config.ts's orgAdminRole/orgStaffRole) is defence in
+ *  depth, not the primary guard. */
+export async function inviteToOrganization(
+  input: { email: string; role: AppRole },
+  reqHeaders?: Headers,
+): Promise<{ invitationId: string }> {
   const result = await auth.api.createInvitation({
-    // The plugin isn't configured with our custom access-control roles (no
-    // `ac`/`roles` in config.ts — same gap the rest of this file already
-    // lives with, see the "admin"-string-coincidence note above), so its
-    // types only know its own default role union. The stored value is a
-    // free-text column at runtime either way. Modelling AppRole as real
-    // better-auth roles is follow-up work, not part of this cast.
-    body: { email: input.email, role: input.role as never, resend: true },
-    headers: await headers(),
+    body: { email: input.email, role: input.role, resend: true },
+    headers: await resolveHeaders(reqHeaders),
   });
   return { invitationId: result.id };
 }
@@ -418,8 +420,8 @@ export type InvitationPreview = {
  *  *who*, if anyone, is asking before any of that applies (a brand-new
  *  invitee mid-signup has zero memberships, which getCurrentUser() would
  *  otherwise read as "not signed in"). */
-export async function currentSessionEmail(): Promise<string | null> {
-  const session = await auth.api.getSession({ headers: await headers() });
+export async function currentSessionEmail(reqHeaders?: Headers): Promise<string | null> {
+  const session = await auth.api.getSession({ headers: await resolveHeaders(reqHeaders) });
   return session?.user.email ?? null;
 }
 
@@ -476,7 +478,21 @@ async function finalizeAcceptance(
   userId: string,
   sessionToken: string,
 ): Promise<{ organizationId: string }> {
-  return db.transaction(async (tx) => {
+  // `invitations` carries no RLS (it must be readable before the
+  // Organization scope exists at all — see its schema comment), so this
+  // plain read is only to learn *which* Organization to scope the rest of
+  // the transaction to. `stores` below is an ordinary RLS-scoped table —
+  // withOrganizationScope, not a bare db.transaction, is what sets
+  // app.organization_id for it.
+  const [pending] = await db.select().from(invitations).where(eq(invitations.id, invitationId)).limit(1);
+  if (!pending || pending.status !== "pending" || pending.expiresAt < new Date()) {
+    throw new Error("This invitation is no longer valid.");
+  }
+
+  return withOrganizationScope(pending.organizationId, async (tx) => {
+    // Re-checked with the same atomic, row-count-guarded update the plain
+    // read above can't provide by itself — the guard against a double
+    // accept racing this one.
     const [accepted] = await tx
       .update(invitations)
       .set({ status: "accepted" })
@@ -530,13 +546,14 @@ async function finalizeAcceptance(
 export async function acceptInvitationAsNewUser(
   token: string,
   input: { name: string; password: string },
+  reqHeaders?: Headers,
 ): Promise<{ organizationId: string }> {
   const invitation = await getInvitationForAccept(token);
   if (!invitation || !invitation.valid) throw new Error("This invitation is no longer valid.");
 
   const result = await auth.api.signUpEmail({
     body: { email: invitation.email, name: input.name, password: input.password },
-    headers: await headers(),
+    headers: await resolveHeaders(reqHeaders),
   });
   if (!result.token) throw new Error("Couldn't start a session for the new account.");
   return finalizeAcceptance(token, result.user.id, result.token);
@@ -546,8 +563,11 @@ export async function acceptInvitationAsNewUser(
  *  (typically: they had an account already — ADR-0005 §5's "linking, not
  *  creating"). Guarded at the call site: the caller checks the session's
  *  email matches before offering this. */
-export async function acceptInvitationAsCurrentUser(token: string): Promise<{ organizationId: string }> {
-  const session = await auth.api.getSession({ headers: await headers() });
+export async function acceptInvitationAsCurrentUser(
+  token: string,
+  reqHeaders?: Headers,
+): Promise<{ organizationId: string }> {
+  const session = await auth.api.getSession({ headers: await resolveHeaders(reqHeaders) });
   if (!session) redirect("/login");
 
   const invitation = await getInvitationForAccept(token);

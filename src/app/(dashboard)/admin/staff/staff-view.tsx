@@ -18,7 +18,6 @@ import {
   SheetFooter,
 } from "@/components/ui/sheet";
 import { Icon } from "@/components/icon";
-import { CheckboxField } from "@/components/ui/checkbox";
 import type { StaffMember } from "@/services/staff";
 import type { Store } from "@/services/stores";
 import type { AppRole } from "@/services/types";
@@ -103,7 +102,7 @@ export function StaffView({
         </div>
       </ScrollBody>
 
-      <AddStaffSheet open={adding} onOpenChange={setAdding} stores={stores} />
+      <AddStaffSheet open={adding} onOpenChange={setAdding} />
       <ManageStaffSheet member={selected} onClose={() => setSelected(null)} />
     </Screen>
   );
@@ -112,40 +111,32 @@ export function StaffView({
 function AddStaffSheet({
   open,
   onOpenChange,
-  stores,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  stores: Store[];
 }) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       {/* The form only exists while the sheet is open, so useActionState is
           fresh on every open — otherwise the previous submit's confirmation
           would still be on screen the next time it opened. */}
-      <SheetContent>
-        {open && <AddStaffForm stores={stores} onDone={() => onOpenChange(false)} />}
-      </SheetContent>
+      <SheetContent>{open && <AddStaffForm onDone={() => onOpenChange(false)} />}</SheetContent>
     </Sheet>
   );
 }
 
-function AddStaffForm({ stores, onDone }: { stores: Store[]; onDone: () => void }) {
+function AddStaffForm({ onDone }: { onDone: () => void }) {
   const [role, setRole] = useState<AppRole>("support_agent");
-  // Every Store checked by default: the common case (one Store, or a
-  // brand-new Admin's first hire) needs the Admin to change nothing rather
-  // than tick every box by hand.
-  const [storeIds, setStoreIds] = useState<string[]>(() => stores.map((s) => s.id));
   const [state, formAction, pending] = useActionState(addStaffAction, undefined);
 
-  // On success the sheet stays open on a confirmation — the new hire's
-  // sign-in details have been emailed to them.
-  if (state?.emailedTo) {
+  // On success the sheet stays open on a confirmation — an invitation link
+  // has been emailed; nothing about this person exists yet beyond that.
+  if (state?.invitedEmail) {
     return (
       <>
-        <SheetHeader title="Staff added" />
+        <SheetHeader title="Invitation sent" />
         <SheetBody>
-          <InvitationSent email={state.emailedTo} />
+          <InviteSent email={state.invitedEmail} />
         </SheetBody>
         <SheetFooter>
           <Button full onClick={onDone}>
@@ -161,9 +152,6 @@ function AddStaffForm({ stores, onDone }: { stores: Store[]; onDone: () => void 
       <SheetHeader title="Add staff" />
       <form action={formAction}>
         <SheetBody className="grid gap-4">
-          <Field label="Name" required>
-            <Input name="name" autoComplete="off" placeholder="Aung Aung" />
-          </Field>
           <Field label="Email" required>
             <Input name="email" type="email" autoComplete="off" icon="at-sign" placeholder="name@example.com" />
           </Field>
@@ -171,36 +159,11 @@ function AddStaffForm({ stores, onDone }: { stores: Store[]; onDone: () => void 
             <SegmentedControl options={ROLE_OPTIONS} value={role} onChange={setRole} />
             <input type="hidden" name="role" value={role} />
           </Field>
-          {/* Hidden entirely for the common case of one Store, same rule as
-              the Settings switcher — nothing to choose, so nothing shown.
-              Its id still has to reach the server, via a plain hidden
-              input rather than the checkbox row below. */}
-          {stores.length > 1 ? (
-            <Field label="Stores" required>
-              <div className="grid gap-1">
-                {stores.map((s) => (
-                  <CheckboxField
-                    key={s.id}
-                    name="storeIds"
-                    value={s.id}
-                    checked={storeIds.includes(s.id)}
-                    onCheckedChange={(checked) =>
-                      setStoreIds((prev) => (checked ? [...prev, s.id] : prev.filter((id) => id !== s.id)))
-                    }
-                  >
-                    {s.name}
-                  </CheckboxField>
-                ))}
-              </div>
-            </Field>
-          ) : (
-            storeIds.map((id) => <input key={id} type="hidden" name="storeIds" value={id} />)
-          )}
           {state?.error && <p className="font-ui text-small text-danger">{state.error}</p>}
         </SheetBody>
         <SheetFooter>
           <Button full type="submit" disabled={pending}>
-            {pending ? "Adding…" : "Add to Organization"}
+            {pending ? "Sending…" : "Send invitation"}
           </Button>
         </SheetFooter>
       </form>
@@ -208,11 +171,21 @@ function AddStaffForm({ stores, onDone }: { stores: Store[]; onDone: () => void 
   );
 }
 
-/**
- * The credential is delivered by email now — see
- * docs/adr/0006-transactional-email.md. This screen only confirms where it
- * went; it never holds the password.
- */
+/** New-member path: an invitation link, not a password — they set their own
+ *  on accept (docs/adr/0006-transactional-email.md). */
+function InviteSent({ email }: { email: string }) {
+  return (
+    <div className="grid gap-3">
+      <p className="font-ui text-small text-text-body">
+        We&apos;ve sent an invitation to <span className="font-medium">{email}</span>. They&apos;ll
+        set their own name and password when they accept it.
+      </p>
+    </div>
+  );
+}
+
+/** Reset-password path: a generated temporary password, emailed —
+ *  the one credential this app still issues (docs/adr/0006). */
 function InvitationSent({ email }: { email: string }) {
   return (
     <div className="grid gap-3">

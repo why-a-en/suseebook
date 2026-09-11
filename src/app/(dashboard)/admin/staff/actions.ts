@@ -1,17 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdmin, roleLabel } from "@/lib/auth";
+import { inviteToOrganization, requireAdmin } from "@/lib/auth";
 import { assertDeliverableEmail, normalizeEmail } from "@/lib/email/address";
 import { sendCredentialsEmail } from "@/lib/email/send";
 import { withCurrentOrganization } from "@/lib/tenancy";
-import {
-  addStaff,
-  changeStaffRole,
-  removeStaff,
-  resetStaffPassword,
-  setStaffStatus,
-} from "@/services/staff";
+import { changeStaffRole, removeStaff, resetStaffPassword, setStaffStatus } from "@/services/staff";
 import { ServiceError, type AppRole } from "@/services/types";
 
 // Thin wrappers. Every rule lives in src/services/staff.ts; what belongs
@@ -46,21 +40,23 @@ async function asAdmin<T>(
   }
 }
 
-const SEND_FAILED =
-  "The account was created, but the invitation email failed to send. " +
-  "Use Reset password to try again.";
+/** On success, the address an invitation was sent to. No name to collect —
+ *  the invitee sets their own on accept (docs/adr/0005-store-as-sole-tenant.md
+ *  §5); nothing here creates an account. */
+export type InvitationSentResult = StaffActionResult & { invitedEmail?: string };
 
 export async function addStaffAction(
-  _prev: IssuedPasswordResult | undefined,
+  _prev: InvitationSentResult | undefined,
   formData: FormData,
-): Promise<IssuedPasswordResult> {
+): Promise<InvitationSentResult> {
   await requireAdmin();
 
-  const name = String(formData.get("name") ?? "").trim();
   const email = normalizeEmail(String(formData.get("email") ?? ""));
+  const role = String(formData.get("role") ?? "support_agent") as AppRole;
 
-  // Deliverability first — before the service creates a user for an address
-  // that would only bounce. ServiceError here is a message for the Admin.
+  // Deliverability first — the plugin would otherwise write an invitations
+  // row for an address that can only bounce. ServiceError here is a message
+  // for the Admin.
   try {
     await assertDeliverableEmail(email);
   } catch (error) {
@@ -68,32 +64,19 @@ export async function addStaffAction(
     throw error;
   }
 
-  const { value, error } = await asAdmin((ctx) =>
-    addStaff(ctx, {
-      name,
-      email,
-      role: String(formData.get("role") ?? "support_agent") as AppRole,
-      storeIds: formData.getAll("storeIds").map(String),
-    }),
-  );
-  if (error) return { error };
-
   try {
-    await sendCredentialsEmail({
-      to: value!.email,
-      name: value!.name,
-      temporaryPassword: value!.temporaryPassword,
-      context: {
-        kind: "new-staff",
-        organizationName: value!.organizationName,
-        roleLabel: roleLabel(value!.role),
-      },
-    });
-  } catch {
-    return { error: SEND_FAILED };
+    await inviteToOrganization({ email, role });
+  } catch (error) {
+    return {
+      error:
+        error instanceof Error
+          ? error.message
+          : "Couldn't send the invitation. Try again from Staff.",
+    };
   }
 
-  return { emailedTo: value!.email };
+  revalidatePath("/admin/staff");
+  return { invitedEmail: email };
 }
 
 export async function resetStaffPasswordAction(

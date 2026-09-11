@@ -3,15 +3,10 @@ import { eq, inArray } from "drizzle-orm";
 import { db, withOrganizationScope } from "@/db/client";
 import { accounts, memberStores, members, organizations, stores, users } from "@/db/schema";
 import { auth } from "@/lib/auth/config";
-import {
-  addStaff,
-  changeStaffRole,
-  listStaff,
-  removeStaff,
-  resetStaffPassword,
-  setStaffStatus,
-} from "@/services/staff";
-import { ServiceError, type ServiceContext } from "@/services/types";
+import { hashPassword } from "@/lib/auth/hash";
+import { generateTemporaryPassword } from "@/services/password";
+import { changeStaffRole, listStaff, removeStaff, resetStaffPassword, setStaffStatus } from "@/services/staff";
+import { ServiceError, type AppRole, type ServiceContext } from "@/services/types";
 
 const TAG = `staff-${Date.now()}`;
 
@@ -34,6 +29,35 @@ async function canSignIn(email: string, password: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * A member with a real, signed-in-able password — for tests that exercise
+ * resetStaffPassword / changeStaffRole / removeStaff and only need *a*
+ * teammate to act on, not the invitation flow itself (that's
+ * tests/invitations.test.ts). Inserts directly rather than through a
+ * service, mirroring what addStaff used to do before members joined by
+ * invitation (docs/adr/0005-store-as-sole-tenant.md §6).
+ */
+async function createTestMember(input: { name: string; email: string; role: AppRole }) {
+  const temporaryPassword = generateTemporaryPassword();
+  const [user] = await db
+    .insert(users)
+    .values({ name: input.name, email: input.email, mustChangePassword: true })
+    .returning({ id: users.id, name: users.name, email: users.email });
+  await db.insert(accounts).values({
+    issuer: "local:credential",
+    accountId: user.id,
+    providerId: "credential",
+    userId: user.id,
+    password: await hashPassword(temporaryPassword),
+  });
+  const [member] = await db
+    .insert(members)
+    .values({ organizationId: orgId, userId: user.id, role: input.role })
+    .returning({ id: members.id });
+  await db.insert(memberStores).values({ memberId: member.id, storeId });
+  return { memberId: member.id, userId: user.id, name: user.name, email: user.email, temporaryPassword };
 }
 
 beforeAll(async () => {
@@ -95,39 +119,10 @@ afterAll(async () => {
   await db.delete(organizations).where(eq(organizations.id, orgId));
 });
 
-describe("addStaff", () => {
-  it("issues a working temporary password and forces a change", async () => {
-    const email = `${TAG}-new@staff.test`;
-    const created = await asAdmin((ctx) =>
-      addStaff(ctx, { name: "New Hire", email, role: "support_agent", storeIds: [storeId] }),
-    );
-
-    expect(created.temporaryPassword).toHaveLength(12);
-    // Generated, not chosen — the point is that no Admin picks password123.
-    expect(created.temporaryPassword).toMatch(/^[abcdefghjkmnpqrtuvwxyz2346789]+$/);
-
-    expect(await canSignIn(email, created.temporaryPassword)).toBe(true);
-
-    const [row] = await db.select().from(users).where(eq(users.id, created.userId));
-    expect(row.mustChangePassword).toBe(true);
-  });
-
-  it("refuses an email that already exists on the platform", async () => {
-    const email = `${TAG}-dup@staff.test`;
-    await asAdmin((ctx) => addStaff(ctx, { name: "First", email, role: "supplier", storeIds: [storeId] }));
-
-    await expect(
-      asAdmin((ctx) => addStaff(ctx, { name: "Second", email, role: "supplier", storeIds: [storeId] })),
-    ).rejects.toBeInstanceOf(ServiceError);
-  });
-});
-
 describe("resetStaffPassword", () => {
   it("replaces the old password and forces a change", async () => {
     const email = `${TAG}-reset@staff.test`;
-    const created = await asAdmin((ctx) =>
-      addStaff(ctx, { name: "Forgetful", email, role: "supplier", storeIds: [storeId] }),
-    );
+    const created = await createTestMember({ name: "Forgetful", email, role: "supplier" });
 
     // Clear the flag so we can prove the reset sets it again.
     await db
@@ -195,9 +190,7 @@ describe("guards that stop an Organization locking itself out", () => {
   });
 
   it("lets an Admin be demoted once a second Admin exists", async () => {
-    const second = await asAdmin((ctx) =>
-      addStaff(ctx, { name: "Second Admin", email: `${TAG}-admin2@staff.test`, role: "admin", storeIds: [storeId] }),
-    );
+    const second = await createTestMember({ name: "Second Admin", email: `${TAG}-admin2@staff.test`, role: "admin" });
 
     await asAdmin((ctx) =>
       changeStaffRole(ctx, { memberId: second.memberId, role: "support_agent" }),

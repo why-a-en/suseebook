@@ -2,7 +2,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
-import { impersonationEvents, memberStores, members, organizations, sessions, users } from "@/db/schema";
+import { impersonationEvents, invitations, memberStores, members, organizations, sessions, stores, users } from "@/db/schema";
 import { auth } from "./config";
 import { isPlatformAdmin } from "./platform-admins";
 
@@ -367,6 +367,179 @@ export async function setActiveStore(storeId: string): Promise<void> {
     .update(sessions)
     .set({ activeStoreId: storeId, updatedAt: new Date() })
     .where(eq(sessions.id, session.session.id));
+}
+
+// --- Invitations ------------------------------------------------------------
+//
+// Joining an Organization is by invitation only (ADR-0005 §6). better-auth's
+// organization plugin owns the `invitations` row and the send (config.ts's
+// `sendInvitationEmail`); everything here is the part the plugin can't do
+// for us — inviting from the caller's *active* Organization, and accepting
+// before or after the invitee has an account.
+
+/** Sends (or re-sends) an invitation from the caller's active Organization.
+ *  requireAdmin() at the call site is the real gate; the plugin's own
+ *  permission check (our `admin` role string happens to match its default
+ *  `admin` role) is defence in depth, not the primary guard. */
+export async function inviteToOrganization(input: {
+  email: string;
+  role: AppRole;
+}): Promise<{ invitationId: string }> {
+  const result = await auth.api.createInvitation({
+    // The plugin isn't configured with our custom access-control roles (no
+    // `ac`/`roles` in config.ts — same gap the rest of this file already
+    // lives with, see the "admin"-string-coincidence note above), so its
+    // types only know its own default role union. The stored value is a
+    // free-text column at runtime either way. Modelling AppRole as real
+    // better-auth roles is follow-up work, not part of this cast.
+    body: { email: input.email, role: input.role as never, resend: true },
+    headers: await headers(),
+  });
+  return { invitationId: result.id };
+}
+
+export type InvitationPreview = {
+  id: string;
+  email: string;
+  role: AppRole;
+  organizationName: string;
+  inviterName: string;
+  /** False once accepted/cancelled/rejected, or past expiresAt. accept()
+   *  re-checks this itself — this is only for what the accept screen shows. */
+  valid: boolean;
+};
+
+/** Reads an invitation for display on `/invite/accept`, before the invitee
+ *  necessarily has a session — `invitations` carries no RLS (it must be
+ *  readable pre-auth to get here at all; see its own schema comment), so
+ *  this is a plain, unscoped read keyed by the unguessable id in the link. */
+export async function getInvitationForAccept(token: string): Promise<InvitationPreview | null> {
+  const [row] = await db
+    .select({
+      id: invitations.id,
+      email: invitations.email,
+      role: invitations.role,
+      status: invitations.status,
+      expiresAt: invitations.expiresAt,
+      organizationName: organizations.name,
+      inviterName: users.name,
+    })
+    .from(invitations)
+    .innerJoin(organizations, eq(organizations.id, invitations.organizationId))
+    .innerJoin(users, eq(users.id, invitations.inviterId))
+    .where(eq(invitations.id, token))
+    .limit(1);
+  if (!row) return null;
+
+  return {
+    id: row.id,
+    email: row.email,
+    role: (row.role ?? "support_agent") as AppRole,
+    organizationName: row.organizationName,
+    inviterName: row.inviterName,
+    valid: row.status === "pending" && row.expiresAt > new Date(),
+  };
+}
+
+/** The membership write shared by both accept paths below. The status flip
+ *  is the guard against a double-accept race — an atomic
+ *  `UPDATE ... WHERE status = 'pending'`, the same shape better-auth's own
+ *  adapter uses, checked by row count rather than a separate lock — and
+ *  throwing inside the callback rolls the whole transaction back, so an
+ *  expired invitation never ends up marked accepted.
+ *
+ *  Grants every Store the Organization currently has: ADR-0004's per-Store
+ *  grant picker isn't reachable from an invitation yet, and ADR-0005 removes
+ *  the distinction in Phase 3 anyway. Stamps this Organization active on
+ *  *this one* session only (by token) — not every session the invitee has,
+ *  which would yank a multi-Organization Supplier's other open sessions into
+ *  this Organization too. */
+async function finalizeAcceptance(
+  invitationId: string,
+  userId: string,
+  sessionToken: string,
+): Promise<{ organizationId: string }> {
+  return db.transaction(async (tx) => {
+    const [accepted] = await tx
+      .update(invitations)
+      .set({ status: "accepted" })
+      .where(and(eq(invitations.id, invitationId), eq(invitations.status, "pending")))
+      .returning();
+    if (!accepted || accepted.expiresAt < new Date()) {
+      throw new Error("This invitation is no longer valid.");
+    }
+
+    await tx
+      .insert(members)
+      .values({ organizationId: accepted.organizationId, userId, role: accepted.role ?? "support_agent" })
+      .onConflictDoNothing();
+
+    const [member] = await tx
+      .select({ id: members.id })
+      .from(members)
+      .where(and(eq(members.organizationId, accepted.organizationId), eq(members.userId, userId)))
+      .limit(1);
+    const orgStores = await tx
+      .select({ id: stores.id })
+      .from(stores)
+      .where(eq(stores.organizationId, accepted.organizationId));
+    if (member && orgStores.length > 0) {
+      await tx
+        .insert(memberStores)
+        .values(orgStores.map((s) => ({ memberId: member.id, storeId: s.id })))
+        .onConflictDoNothing();
+    }
+
+    await tx
+      .update(sessions)
+      .set({ activeOrganizationId: accepted.organizationId, activeStoreId: null, updatedAt: new Date() })
+      .where(eq(sessions.token, sessionToken));
+
+    return { organizationId: accepted.organizationId };
+  });
+}
+
+/** Accept path for an email the platform has never seen: creates the
+ *  account (their own name + password — nobody else ever sets either,
+ *  ADR-0005 §5) and signs them in, then accepts.
+ *
+ *  Deliberately not `signUpEmail` immediately followed by a plugin
+ *  `acceptInvitation` call in the same action: the invitee's session cookie
+ *  from the sign-up doesn't reach the following `auth.api` call within one
+ *  server action (better-auth reads it from the *incoming* request headers,
+ *  which are already fixed for this request). finalizeAcceptance() does the
+ *  membership write directly instead — same effect, no cookie relay needed
+ *  — and this function only has to make sure a session exists at all. */
+export async function acceptInvitationAsNewUser(
+  token: string,
+  input: { name: string; password: string },
+): Promise<{ organizationId: string }> {
+  const invitation = await getInvitationForAccept(token);
+  if (!invitation || !invitation.valid) throw new Error("This invitation is no longer valid.");
+
+  const result = await auth.api.signUpEmail({
+    body: { email: invitation.email, name: input.name, password: input.password },
+    headers: await headers(),
+  });
+  if (!result.token) throw new Error("Couldn't start a session for the new account.");
+  return finalizeAcceptance(token, result.user.id, result.token);
+}
+
+/** Accept path for someone already signed in as the invited address
+ *  (typically: they had an account already — ADR-0005 §5's "linking, not
+ *  creating"). Guarded at the call site: the caller checks the session's
+ *  email matches before offering this. */
+export async function acceptInvitationAsCurrentUser(token: string): Promise<{ organizationId: string }> {
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session) redirect("/login");
+
+  const invitation = await getInvitationForAccept(token);
+  if (!invitation || !invitation.valid) throw new Error("This invitation is no longer valid.");
+  if (invitation.email.toLowerCase() !== session.user.email.toLowerCase()) {
+    throw new Error("You're signed in with a different email than this invitation was sent to.");
+  }
+
+  return finalizeAcceptance(token, session.user.id, session.session.token);
 }
 
 // --- Support impersonation ------------------------------------------------

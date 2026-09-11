@@ -407,7 +407,21 @@ export type InvitationPreview = {
   /** False once accepted/cancelled/rejected, or past expiresAt. accept()
    *  re-checks this itself — this is only for what the accept screen shows. */
   valid: boolean;
+  /** Whether `email` already has an account on the platform — decides
+   *  whether the accept screen offers "set your password" (signUpEmail
+   *  would fail outright on a taken email) or "sign in to accept". */
+  hasAccount: boolean;
 };
+
+/** The raw signed-in identity, independent of getCurrentUser()'s
+ *  Organization-membership resolution — `/invite/accept` needs to know
+ *  *who*, if anyone, is asking before any of that applies (a brand-new
+ *  invitee mid-signup has zero memberships, which getCurrentUser() would
+ *  otherwise read as "not signed in"). */
+export async function currentSessionEmail(): Promise<string | null> {
+  const session = await auth.api.getSession({ headers: await headers() });
+  return session?.user.email ?? null;
+}
 
 /** Reads an invitation for display on `/invite/accept`, before the invitee
  *  necessarily has a session — `invitations` carries no RLS (it must be
@@ -431,12 +445,15 @@ export async function getInvitationForAccept(token: string): Promise<InvitationP
     .limit(1);
   if (!row) return null;
 
+  const [account] = await db.select({ id: users.id }).from(users).where(eq(users.email, row.email)).limit(1);
+
   return {
     id: row.id,
     email: row.email,
     role: (row.role ?? "support_agent") as AppRole,
     organizationName: row.organizationName,
     inviterName: row.inviterName,
+    hasAccount: Boolean(account),
     valid: row.status === "pending" && row.expiresAt > new Date(),
   };
 }

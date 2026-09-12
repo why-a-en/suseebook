@@ -17,7 +17,11 @@ import {
 import { Icon } from "@/components/icon";
 import type { OrganizationDetail } from "@/services/platform";
 import { impersonateAction } from "../../actions";
-import { setOrganizationStatusAction } from "../actions";
+import {
+  cancelOrganizationInvitationAction,
+  resendOrganizationInvitationAction,
+  setOrganizationStatusAction,
+} from "../actions";
 
 const ROLE_LABELS = {
   admin: "Admin",
@@ -34,10 +38,12 @@ function formatDate(date: Date): string {
 }
 
 type Member = OrganizationDetail["members"][number];
+type PendingInvitation = OrganizationDetail["pendingInvitations"][number];
 
 export function OrganizationDetailView({ org }: { org: OrganizationDetail }) {
   const [pending, startTransition] = useTransition();
   const [selected, setSelected] = useState<Member | null>(null);
+  const [selectedInvite, setSelectedInvite] = useState<PendingInvitation | null>(null);
 
   return (
     <Screen>
@@ -91,12 +97,34 @@ export function OrganizationDetailView({ org }: { org: OrganizationDetail }) {
             </div>
           </Row>
         ))}
+
+        {/* Hidden entirely once nobody's waiting — almost always just the
+            first Admin's, until it's accepted. */}
+        {org.pendingInvitations.length > 0 && (
+          <>
+            <SectionHeader right={`${org.pendingInvitations.length}`}>Pending</SectionHeader>
+            {org.pendingInvitations.map((invite) => (
+              <Row key={invite.id} onClick={() => setSelectedInvite(invite)}>
+                <span className="min-w-0 flex-1 truncate">{invite.email}</span>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span className="font-ui text-small text-text-faint">{ROLE_LABELS[invite.role]}</span>
+                  <Icon name="chevron-right" size={16} className="text-text-faint" />
+                </div>
+              </Row>
+            ))}
+          </>
+        )}
       </ScrollBody>
 
       <MemberSheet
         member={selected}
         orgSuspended={org.status === "suspended"}
         onClose={() => setSelected(null)}
+      />
+      <InviteSheet
+        organizationId={org.id}
+        invite={selectedInvite}
+        onClose={() => setSelectedInvite(null)}
       />
     </Screen>
   );
@@ -146,6 +174,70 @@ function MemberSheet({
                 {orgSuspended ? "Can't impersonate — org suspended" : "Impersonate"}
               </Button>
             </SheetFooter>
+          </>
+        )}
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function InviteSheet({
+  organizationId,
+  invite,
+  onClose,
+}: {
+  organizationId: string;
+  invite: PendingInvitation | null;
+  onClose: () => void;
+}) {
+  const [pending, startTransition] = useTransition();
+
+  function resend() {
+    if (!invite) return;
+    startTransition(async () => {
+      const result = await resendOrganizationInvitationAction(organizationId, invite.id);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(`Invitation resent to ${invite.email}.`);
+      onClose();
+    });
+  }
+
+  function cancel() {
+    if (!invite) return;
+    startTransition(async () => {
+      const result = await cancelOrganizationInvitationAction(organizationId, invite.id);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      onClose();
+    });
+  }
+
+  return (
+    <Sheet open={invite !== null} onOpenChange={(open) => !open && onClose()}>
+      <SheetContent>
+        {invite && (
+          <>
+            <SheetHeader title={invite.email} eyebrow={`Invited as ${ROLE_LABELS[invite.role]}`} />
+            <SheetBody className="grid gap-5">
+              <p className="font-ui text-small text-text-faint">
+                Expires{" "}
+                {invite.expiresAt.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}.
+                Not yet accepted — nothing about this person exists beyond this invitation.
+              </p>
+              <div className="grid gap-3">
+                <Button full variant="secondary" disabled={pending} onClick={resend}>
+                  Resend
+                </Button>
+                <Button full variant="danger" disabled={pending} onClick={cancel}>
+                  Cancel invitation
+                </Button>
+              </div>
+            </SheetBody>
           </>
         )}
       </SheetContent>

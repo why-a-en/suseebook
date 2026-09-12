@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { inviteToOrganization, requireAdmin } from "@/lib/auth";
+import { cancelOrganizationInvitation, inviteToOrganization, requireAdmin } from "@/lib/auth";
 import { assertDeliverableEmail, normalizeEmail } from "@/lib/email/address";
 import { sendCredentialsEmail } from "@/lib/email/send";
 import { withCurrentOrganization } from "@/lib/tenancy";
@@ -45,15 +45,11 @@ async function asAdmin<T>(
  *  §5); nothing here creates an account. */
 export type InvitationSentResult = StaffActionResult & { invitedEmail?: string };
 
-export async function addStaffAction(
-  _prev: InvitationSentResult | undefined,
-  formData: FormData,
-): Promise<InvitationSentResult> {
-  await requireAdmin();
-
-  const email = normalizeEmail(String(formData.get("email") ?? ""));
-  const role = String(formData.get("role") ?? "support_agent") as AppRole;
-
+/** Shared by a fresh "Add staff" submit and "Resend" on an existing pending
+ *  row — both are exactly "invite this email to this role", the plugin's
+ *  own resend:true (config.ts) is what makes the second one supersede the
+ *  first rather than double up. */
+async function sendInvite(email: string, role: AppRole): Promise<InvitationSentResult> {
   // Deliverability first — the plugin would otherwise write an invitations
   // row for an address that can only bounce. ServiceError here is a message
   // for the Admin.
@@ -77,6 +73,32 @@ export async function addStaffAction(
 
   revalidatePath("/admin/staff");
   return { invitedEmail: email };
+}
+
+export async function addStaffAction(
+  _prev: InvitationSentResult | undefined,
+  formData: FormData,
+): Promise<InvitationSentResult> {
+  await requireAdmin();
+  const email = normalizeEmail(String(formData.get("email") ?? ""));
+  const role = String(formData.get("role") ?? "support_agent") as AppRole;
+  return sendInvite(email, role);
+}
+
+export async function resendInviteAction(email: string, role: AppRole): Promise<InvitationSentResult> {
+  await requireAdmin();
+  return sendInvite(normalizeEmail(email), role);
+}
+
+export async function cancelInviteAction(invitationId: string): Promise<StaffActionResult> {
+  await requireAdmin();
+  try {
+    await cancelOrganizationInvitation(invitationId);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Couldn't cancel the invitation." };
+  }
+  revalidatePath("/admin/staff");
+  return {};
 }
 
 export async function resetStaffPasswordAction(

@@ -18,13 +18,16 @@ import {
   SheetFooter,
 } from "@/components/ui/sheet";
 import { Icon } from "@/components/icon";
+import type { PendingInvitation } from "@/lib/auth";
 import type { StaffMember } from "@/services/staff";
 import type { Store } from "@/services/stores";
 import type { AppRole } from "@/services/types";
 import {
   addStaffAction,
+  cancelInviteAction,
   changeStaffRoleAction,
   removeStaffAction,
+  resendInviteAction,
   resetStaffPasswordAction,
   setStaffStatusAction,
 } from "./actions";
@@ -45,13 +48,16 @@ export function StaffView({
   staff,
   stores,
   currentUserId,
+  pendingInvitations,
 }: {
   staff: StaffMember[];
   stores: Store[];
   currentUserId: string;
+  pendingInvitations: PendingInvitation[];
 }) {
   const [adding, setAdding] = useState(false);
   const [selected, setSelected] = useState<StaffMember | null>(null);
+  const [selectedInvite, setSelectedInvite] = useState<PendingInvitation | null>(null);
 
   return (
     <Screen>
@@ -95,6 +101,24 @@ export function StaffView({
           );
         })}
 
+        {/* Hidden entirely once nobody's waiting — an empty "Pending"
+            section would just be noise below a Team list that already
+            says who's actually here. */}
+        {pendingInvitations.length > 0 && (
+          <>
+            <SectionHeader right={`${pendingInvitations.length}`}>Pending</SectionHeader>
+            {pendingInvitations.map((invite) => (
+              <Row key={invite.id} onClick={() => setSelectedInvite(invite)}>
+                <span className="min-w-0 flex-1 truncate">{invite.email}</span>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span className="font-ui text-small text-text-faint">{ROLE_LABELS[invite.role]}</span>
+                  <Icon name="chevron-right" size={16} className="text-text-faint" />
+                </div>
+              </Row>
+            ))}
+          </>
+        )}
+
         <div className="px-5 pt-5 pb-8">
           <Button full variant="secondary" icon="user-plus" onClick={() => setAdding(true)}>
             Add staff
@@ -104,6 +128,7 @@ export function StaffView({
 
       <AddStaffSheet open={adding} onOpenChange={setAdding} />
       <ManageStaffSheet member={selected} onClose={() => setSelected(null)} />
+      <ManageInviteSheet invite={selectedInvite} onClose={() => setSelectedInvite(null)} />
     </Screen>
   );
 }
@@ -308,6 +333,68 @@ function ManageStaffSheet({
                   onClick={() => run(() => removeStaffAction(member.memberId))}
                 >
                   Remove from Organization
+                </Button>
+              </div>
+            </SheetBody>
+          </>
+        )}
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function ManageInviteSheet({
+  invite,
+  onClose,
+}: {
+  invite: PendingInvitation | null;
+  onClose: () => void;
+}) {
+  const [pending, startTransition] = useTransition();
+
+  function resend() {
+    if (!invite) return;
+    startTransition(async () => {
+      const result = await resendInviteAction(invite.email, invite.role);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(`Invitation resent to ${invite.email}.`);
+      onClose();
+    });
+  }
+
+  function cancel() {
+    if (!invite) return;
+    startTransition(async () => {
+      const result = await cancelInviteAction(invite.id);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      onClose();
+    });
+  }
+
+  return (
+    <Sheet open={invite !== null} onOpenChange={(open) => !open && onClose()}>
+      <SheetContent>
+        {invite && (
+          <>
+            <SheetHeader title={invite.email} eyebrow={`Invited as ${ROLE_LABELS[invite.role]}`} />
+            <SheetBody className="grid gap-5">
+              <p className="font-ui text-small text-text-faint">
+                Expires{" "}
+                {invite.expiresAt.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}.
+                Not yet accepted — nothing about this person exists beyond this invitation.
+              </p>
+              <div className="grid gap-3">
+                <Button full variant="secondary" disabled={pending} onClick={resend}>
+                  Resend
+                </Button>
+                <Button full variant="danger" disabled={pending} onClick={cancel}>
+                  Cancel invitation
                 </Button>
               </div>
             </SheetBody>

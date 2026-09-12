@@ -579,6 +579,37 @@ export async function acceptInvitationAsCurrentUser(
   return finalizeAcceptance(token, session.user.id, session.session.token);
 }
 
+export type PendingInvitation = {
+  id: string;
+  email: string;
+  role: AppRole;
+  expiresAt: Date;
+};
+
+/** Every still-pending, not-yet-expired invitation for the caller's active
+ *  Organization — for the Staff screen's "invited, not yet joined" list.
+ *  The plugin's listInvitations returns every status ever reached; accepted
+ *  and cancelled ones aren't this screen's concern. */
+export async function listPendingInvitations(reqHeaders?: Headers): Promise<PendingInvitation[]> {
+  const rows = await auth.api.listInvitations({ headers: await resolveHeaders(reqHeaders) });
+  const now = new Date();
+  return rows
+    .filter((r) => r.status === "pending" && new Date(r.expiresAt) > now)
+    .map((r) => ({
+      id: r.id,
+      email: r.email,
+      role: (r.role ?? "support_agent") as AppRole,
+      expiresAt: new Date(r.expiresAt),
+    }));
+}
+
+/** Revokes a pending invitation — requireAdmin() at the call site is the
+ *  real gate; the plugin's own invitation:cancel permission (orgAdminRole
+ *  only) is defence in depth. */
+export async function cancelOrganizationInvitation(invitationId: string, reqHeaders?: Headers): Promise<void> {
+  await auth.api.cancelInvitation({ body: { invitationId }, headers: await resolveHeaders(reqHeaders) });
+}
+
 // --- Support impersonation ------------------------------------------------
 //
 // Platform admins can act as a tenant's user to debug their data. Two things

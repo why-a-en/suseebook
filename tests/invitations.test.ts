@@ -16,8 +16,10 @@ import {
 import {
   acceptInvitationAsCurrentUser,
   acceptInvitationAsNewUser,
+  cancelOrganizationInvitation,
   getInvitationForAccept,
   inviteToOrganization,
+  listPendingInvitations,
 } from "@/lib/auth";
 
 // Coverage for docs/adr/0005-store-as-sole-tenant.md §6 / §7: the only way
@@ -224,5 +226,40 @@ describe("acceptInvitationAsCurrentUser", () => {
     // Still just the one (admin's original) membership — the mismatched
     // accept must not have granted a second.
     expect(member).toBeDefined();
+  });
+});
+
+describe("listPendingInvitations + cancelOrganizationInvitation", () => {
+  it("lists only what's still pending, for the caller's own Organization", async () => {
+    const email = `${TAG}-list-pending@invite.test`;
+    const { invitationId } = await inviteToOrganization({ email, role: "support_agent" }, adminHeaders);
+
+    const pending = await listPendingInvitations(adminHeaders);
+    expect(pending.map((p) => p.id)).toContain(invitationId);
+    expect(pending.find((p) => p.id === invitationId)?.email).toBe(email);
+
+    // Accepting removes it from the list — it's no longer pending.
+    await acceptInvitationAsNewUser(invitationId, { name: "Listed", password: PASSWORD }, new Headers());
+    extraUserIds.push((await db.select({ id: users.id }).from(users).where(eq(users.email, email)))[0].id);
+
+    const afterAccept = await listPendingInvitations(adminHeaders);
+    expect(afterAccept.map((p) => p.id)).not.toContain(invitationId);
+  });
+
+  it("cancelling refuses a later accept", async () => {
+    const email = `${TAG}-cancelled@invite.test`;
+    const { invitationId } = await inviteToOrganization({ email, role: "support_agent" }, adminHeaders);
+
+    await cancelOrganizationInvitation(invitationId, adminHeaders);
+
+    const pending = await listPendingInvitations(adminHeaders);
+    expect(pending.map((p) => p.id)).not.toContain(invitationId);
+
+    await expect(
+      acceptInvitationAsNewUser(invitationId, { name: "Too Late", password: PASSWORD }, new Headers()),
+    ).rejects.toThrow(/no longer valid/);
+
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    expect(user).toBeUndefined();
   });
 });

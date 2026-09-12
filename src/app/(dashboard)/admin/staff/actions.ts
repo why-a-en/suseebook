@@ -90,7 +90,7 @@ export async function resetStaffPasswordAction(
       to: value!.email,
       name: value!.name,
       temporaryPassword: value!.temporaryPassword,
-      context: { kind: "reset", organizationName: value!.organizationName },
+      organizationName: value!.organizationName,
     });
   } catch {
     return {

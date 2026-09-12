@@ -1,9 +1,9 @@
-// Sends one sample credential email through the real Resend path, so you can
-// eyeball the layout and confirm RESEND_API_KEY + the sending domain work
-// before wiring up the full create-user flow. Does not touch the database.
+// Sends one sample email through the real Resend path, so you can eyeball
+// the layout and confirm RESEND_API_KEY + the sending domain work. Does not
+// touch the database.
 //
 //   pnpm email:test you@example.com
-//   pnpm email:test you@example.com new-admin
+//   pnpm email:test you@example.com reset
 //   EMAIL_FROM="SuSeeOS <onboarding@resend.dev>" pnpm email:test you@example.com
 //
 // Until suseeos.com is a verified sending domain in the Resend dashboard, the
@@ -14,33 +14,35 @@
 import { config as loadEnv } from "dotenv";
 loadEnv({ path: ".env.local" });
 
-const [to, kind = "new-staff"] = process.argv.slice(2);
+const [to, kind = "invite"] = process.argv.slice(2);
 
-if (!to || !["new-admin", "new-staff", "reset"].includes(kind)) {
-  console.error(
-    "Usage: pnpm email:test <recipient> [new-admin|new-staff|reset]",
-  );
+if (!to || !["invite", "reset"].includes(kind)) {
+  console.error("Usage: pnpm email:test <recipient> [invite|reset]");
   process.exit(1);
 }
 
 // After loadEnv so send.ts reads EMAIL_FROM / RESEND_API_KEY with the file applied.
-const { sendCredentialsEmail } = await import("../src/lib/email/send");
+const { sendInvitationEmail, sendCredentialsEmail } = await import("../src/lib/email/send");
 
-const context = (
-  {
-    "new-admin": { kind: "new-admin", organizationName: "Acme Resale" },
-    "new-staff": { kind: "new-staff", organizationName: "Acme Resale", roleLabel: "Support Agent" },
-    reset: { kind: "reset", organizationName: "Acme Resale" },
-  } as const
-)[kind as "new-admin" | "new-staff" | "reset"];
+if (kind === "invite") {
+  await sendInvitationEmail({
+    to,
+    storeName: "Acme Resale",
+    roleLabel: "Support Agent",
+    // Not a real invitation id — fine for eyeballing layout and delivery;
+    // the link itself 404s on /invite/accept without a matching row.
+    token: "00000000-0000-0000-0000-000000000000",
+    inviterName: "Test Admin",
+  });
+} else {
+  await sendCredentialsEmail({
+    to,
+    name: "Test Person",
+    temporaryPassword: "wnpy4rtk9mqk",
+    organizationName: "Acme Resale",
+  });
+}
 
-await sendCredentialsEmail({
-  to,
-  name: "Test Person",
-  temporaryPassword: "wnpy4rtk9mqk",
-  context,
-});
-
-console.log(`Sent a "${kind}" credential email to ${to}.`);
+console.log(`Sent a "${kind}" email to ${to}.`);
 console.log("Check the inbox, and the Emails log at https://resend.com/emails");
 process.exit(0);

@@ -21,11 +21,6 @@ function resend(): Resend {
   return client;
 }
 
-type CredentialContext =
-  | { kind: "new-admin"; organizationName: string }
-  | { kind: "new-staff"; organizationName: string; roleLabel: string }
-  | { kind: "reset"; organizationName: string };
-
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
@@ -34,44 +29,27 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
-function subjectFor(ctx: CredentialContext): string {
-  switch (ctx.kind) {
-    case "new-admin":
-      return `Your SuSeeOS admin account for ${ctx.organizationName}`;
-    case "new-staff":
-      return `You've been added to ${ctx.organizationName} on SuSeeOS`;
-    case "reset":
-      return `Your SuSeeOS password has been reset`;
-  }
-}
-
-function leadFor(ctx: CredentialContext, name: string): string {
-  const hi = `Hi ${name},`;
-  switch (ctx.kind) {
-    case "new-admin":
-      return `${hi} an account has been created for you to administer ${ctx.organizationName} on SuSeeOS.`;
-    case "new-staff":
-      return `${hi} you've been added to ${ctx.organizationName} on SuSeeOS as ${ctx.roleLabel}.`;
-    case "reset":
-      return `${hi} an administrator has reset your SuSeeOS password for ${ctx.organizationName}.`;
-  }
-}
-
 /**
- * Sends someone their sign-in credentials. Throws on any failure — Resend
- * reports API errors in the result rather than throwing, so we surface those
- * too. The caller decides what the person who triggered it sees; nothing
- * here is retried.
+ * Delivers a generated temporary password after an Admin reset it — the
+ * only credential this app still issues rather than lets someone choose
+ * (docs/adr/0006-transactional-email.md). Every other account-creation path
+ * (staff, onboarding's first teammate, a new Organization's first Admin)
+ * sends sendInvitationEmail below instead; there used to be "new-admin" and
+ * "new-staff" variants here too, and they went with them.
+ *
+ * Throws on any failure — Resend reports API errors in the result rather
+ * than throwing, so we surface those too. The caller decides what the
+ * person who triggered it sees; nothing here is retried.
  */
 export async function sendCredentialsEmail(input: {
   to: string;
   name: string;
   temporaryPassword: string;
-  context: CredentialContext;
+  organizationName: string;
 }): Promise<void> {
-  const { to, name, temporaryPassword, context } = input;
+  const { to, name, temporaryPassword, organizationName } = input;
   const loginUrl = `${appBaseURL()}/login`;
-  const lead = leadFor(context, name);
+  const lead = `Hi ${name}, an administrator has reset your SuSeeOS password for ${organizationName}.`;
 
   const text = [
     lead,
@@ -97,7 +75,7 @@ export async function sendCredentialsEmail(input: {
   const { error } = await resend().emails.send({
     from: FROM,
     to: [to],
-    subject: subjectFor(context),
+    subject: "Your SuSeeOS password has been reset",
     text,
     html,
   });

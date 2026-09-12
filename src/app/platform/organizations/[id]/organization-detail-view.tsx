@@ -69,7 +69,7 @@ export function OrganizationDetailView({ org }: { org: OrganizationDetail }) {
               })
             }
           >
-            {org.status === "suspended" ? "Restore organization" : "Suspend organization"}
+            {org.status === "suspended" ? "Restore Store" : "Suspend Store"}
           </Button>
         </div>
 

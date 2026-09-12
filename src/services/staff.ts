@@ -1,5 +1,5 @@
-import { and, eq, inArray, ne } from "drizzle-orm";
-import { accounts, memberStores, members, organizations, stores, users } from "@/db/schema";
+import { and, eq, ne } from "drizzle-orm";
+import { accounts, members, organizations, users } from "@/db/schema";
 import { hashPassword } from "@/lib/auth/hash";
 import { generateTemporaryPassword } from "./password";
 import { ServiceError, type AppRole, type ServiceContext } from "./types";
@@ -22,11 +22,6 @@ export type StaffMember = {
   role: AppRole;
   status: "active" | "suspended";
   joinedAt: Date;
-  /** Store names this member can work in, in grant order. Empty means no
-   *  access at all — reachable only if every one of their grants was later
-   *  removed; accepting an invitation grants every Store the Organization
-   *  currently has (auth/index.ts's finalizeAcceptance). */
-  storeNames: string[];
 };
 
 export async function listStaff(ctx: ServiceContext): Promise<StaffMember[]> {
@@ -45,28 +40,7 @@ export async function listStaff(ctx: ServiceContext): Promise<StaffMember[]> {
     .where(eq(members.organizationId, ctx.organizationId))
     .orderBy(members.createdAt);
 
-  const memberIds = rows.map((r) => r.memberId);
-  const storeRows =
-    memberIds.length === 0
-      ? []
-      : await ctx.tx
-          .select({ memberId: memberStores.memberId, storeName: stores.name })
-          .from(memberStores)
-          .innerJoin(stores, eq(stores.id, memberStores.storeId))
-          .where(inArray(memberStores.memberId, memberIds));
-
-  const storeNamesByMember = new Map<string, string[]>();
-  for (const r of storeRows) {
-    const list = storeNamesByMember.get(r.memberId) ?? [];
-    list.push(r.storeName);
-    storeNamesByMember.set(r.memberId, list);
-  }
-
-  return rows.map((r) => ({
-    ...r,
-    role: r.role as AppRole,
-    storeNames: storeNamesByMember.get(r.memberId) ?? [],
-  }));
+  return rows.map((r) => ({ ...r, role: r.role as AppRole }));
 }
 
 /**

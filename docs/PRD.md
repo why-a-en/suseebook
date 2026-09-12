@@ -68,7 +68,7 @@ tool where:
 | Modifiers | **Structured, not free text.** A Modifier (e.g. "Color") is a reusable, Organization-wide catalog with a global list of Options; each Product picks the subset of a Modifier's Options that apply to it. |
 | Customer | **A real, searchable entity** (name + phone + address) — not free text re-typed on every order. |
 | Roles & permissions | **Three roles** (Admin, Support Agent, Supplier), each with its own default views — **not** a granular permission system. The split is mostly about what you land on rather than what you're blocked from; the exception is Admin, whose staff-management screens are genuinely gated. |
-| Account creation | **First account out of band, staff management in-app.** A new Organization's first login is created by script (`pnpm org:create`); after that an Admin adds and manages staff from within the app. No emailed invitations — the Admin sets a password and passes it on directly, keeping an email provider out of the stack. |
+| Account creation | **First account out of band, staff management in-app.** A new Organization's first login is created by script (`pnpm store:create`); after that an Admin adds and manages staff from within the app. No emailed invitations — the Admin sets a password and passes it on directly, keeping an email provider out of the stack. |
 | Customer-facing access | **None.** Customers stay in chat/social media; they are not platform users in the MVP (see idea in §9). |
 
 ## 4. Users & Roles
@@ -92,7 +92,7 @@ Admin is different: its staff-management screens check the role on the
 server, not just in navigation. Hiding a shortcut is not access control.
 
 The **first** account for a new Organization is still created out of band,
-by running `pnpm org:create`. Admin exists so that everything *after* that
+by running `pnpm store:create`. Admin exists so that everything *after* that
 — adding staff, changing roles, suspending someone who has left — no longer
 needs a script run by us. Emailed invitations remain deferred: an Admin
 creates the account and passes a generated one-time password on directly,

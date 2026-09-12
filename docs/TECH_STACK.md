@@ -116,7 +116,10 @@ more painful than designing for it now:
 
 (Called "vendor" earlier in this project — renamed to "Organization" to
 stop colliding with the unrelated "Supplier" role; see
-[CONTEXT.md](./CONTEXT.md).)
+[CONTEXT.md](./CONTEXT.md). A sub-Store layer briefly existed underneath
+this boundary — ADR-0004 — and was collapsed back out of it by ADR-0005:
+`organization_id` is Store now, one boundary, no naming split left to
+explain here.)
 
 See [DATA_MODEL.md](./DATA_MODEL.md) for the schema this produces.
 

@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { requireUser } from "@/lib/auth";
-import { withCurrentStore } from "@/lib/tenancy";
+import { withCurrentOrganization } from "@/lib/tenancy";
 import { isUuid } from "@/lib/uuid";
 import { orders, orderItems, orderItemModifiers, customers, products, modifiers, modifierOptions, productModifierOptions } from "@/db/schema";
 import { NewOrderWizard, type WizardProduct, type DraftResume } from "../new-order-wizard";
@@ -19,7 +19,7 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
   const { draft: draftId } = await searchParams;
   if (draftId !== undefined && !isUuid(draftId)) notFound();
 
-  const data = await withCurrentStore(async ({ organizationId, storeId, tx }) => {
+  const data = await withCurrentOrganization(async ({ organizationId, tx }) => {
     const productRows = await tx
       .select({ id: products.id, name: products.name, price: products.price, sourceUrl: products.sourceUrl })
       .from(products)
@@ -63,9 +63,9 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
     if (!draftId) return { wizardProducts, resume: null as DraftResume | null };
 
     // A draft is an Order with placed_at still null — resuming one that's
-    // already been placed, belongs to another org (RLS already scopes the
-    // query, so it just comes back empty), or another Store in this org, is
-    // a 404, not a silent reset to a fresh wizard.
+    // already been placed, or belongs to another org (RLS already scopes
+    // the query, so it just comes back empty), is a 404, not a silent
+    // reset to a fresh wizard.
     const [order] = await tx
       .select({
         id: orders.id,
@@ -80,7 +80,6 @@ export default async function NewOrderPage({ searchParams }: { searchParams: Pro
         and(
           eq(orders.id, draftId),
           eq(orders.organizationId, organizationId),
-          eq(orders.storeId, storeId),
           isNull(orders.placedAt),
         ),
       );

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { and, desc, eq, gte, inArray, isNull } from "drizzle-orm";
 import { requireUser, roleLabel, type AppRole } from "@/lib/auth";
-import { withCurrentStore } from "@/lib/tenancy";
+import { withCurrentOrganization } from "@/lib/tenancy";
 import { orders, orderItems, customers, products } from "@/db/schema";
 import { Screen, ScrollBody } from "@/components/ui/screen";
 import { TopBar } from "@/components/ui/top-bar";
@@ -28,7 +28,6 @@ interface Shortcut {
 const SHORTCUTS_BY_ROLE: Record<AppRole, Shortcut[]> = {
   admin: [
     { href: "/admin/staff", label: "Staff", icon: "user-plus" },
-    { href: "/admin/stores", label: "Stores", icon: "store" },
     { href: "/purchase-queue", label: "To Purchase", icon: "shopping-cart" },
     { href: "/parcels", label: "Parcels", icon: "box" },
     { href: "/customers", label: "Customers", icon: "users" },
@@ -62,7 +61,7 @@ function greeting(hour: number): string {
 }
 
 interface HomeData {
-  storeToday: number;
+  ordersToday: number;
   draftTotal: number;
   draftPreview: { id: string; customerName: string; itemCount: number }[];
   purchaseTotal: number;
@@ -91,13 +90,13 @@ export default async function HomePage() {
   // many rows render before "See all".
   const PREVIEW_CAP = 5;
 
-  const { storeToday, draftTotal, draftPreview, purchaseTotal, purchasePreview } = await withCurrentStore(
-    async ({ organizationId, storeId, tx }): Promise<HomeData> => {
+  const { ordersToday, draftTotal, draftPreview, purchaseTotal, purchasePreview } = await withCurrentOrganization(
+    async ({ organizationId, tx }): Promise<HomeData> => {
       const rows = await tx
         .select({ id: orders.id })
         .from(orders)
-        .where(and(eq(orders.organizationId, organizationId), eq(orders.storeId, storeId), gte(orders.placedAt, startOfToday)));
-      const storeToday = rows.length;
+        .where(and(eq(orders.organizationId, organizationId), gte(orders.placedAt, startOfToday)));
+      const ordersToday = rows.length;
 
       // Pending Order Items grouped by product (same shape as
       // purchase-queue/page.tsx, just without the per-customer breakdown or
@@ -109,7 +108,7 @@ export default async function HomePage() {
         .select({ productId: orderItems.productId, productName: products.name, orderId: orderItems.orderId, quantity: orderItems.quantity })
         .from(orderItems)
         .innerJoin(products, eq(products.id, orderItems.productId))
-        .where(and(eq(orderItems.organizationId, organizationId), eq(orderItems.storeId, storeId), eq(orderItems.status, "pending")));
+        .where(and(eq(orderItems.organizationId, organizationId), eq(orderItems.status, "pending")));
 
       const byProduct = new Map<string, { productId: string; productName: string; totalQuantity: number; orderIds: Set<string> }>();
       for (const r of pendingRows) {
@@ -132,13 +131,13 @@ export default async function HomePage() {
       // the wizard that makes one, see (dashboard)/layout.tsx's canCreate
       // gate), so only they get the list below (and the count is 0, not
       // fetched, for anyone else).
-      if (!seesDrafts) return { storeToday, draftTotal: 0, draftPreview: [], purchaseTotal, purchasePreview };
+      if (!seesDrafts) return { ordersToday, draftTotal: 0, draftPreview: [], purchaseTotal, purchasePreview };
 
       const draftRows = await tx
         .select({ id: orders.id, customerName: customers.name })
         .from(orders)
         .innerJoin(customers, eq(customers.id, orders.customerId))
-        .where(and(eq(orders.organizationId, organizationId), eq(orders.storeId, storeId), isNull(orders.placedAt)))
+        .where(and(eq(orders.organizationId, organizationId), isNull(orders.placedAt)))
         .orderBy(desc(orders.createdAt));
 
       const previewIds = draftRows.slice(0, PREVIEW_CAP).map((d) => d.id);
@@ -148,7 +147,7 @@ export default async function HomePage() {
       for (const r of itemRows) itemCountById.set(r.orderId, (itemCountById.get(r.orderId) ?? 0) + 1);
 
       return {
-        storeToday,
+        ordersToday,
         draftTotal: draftRows.length,
         draftPreview: draftRows.slice(0, PREVIEW_CAP).map((d) => ({ id: d.id, customerName: d.customerName, itemCount: itemCountById.get(d.id) ?? 0 })),
         purchaseTotal,
@@ -168,7 +167,7 @@ export default async function HomePage() {
         </div>
 
         <div className="flex gap-3 px-5 pt-3">
-          <StatTile value={storeToday} label="Orders today" />
+          <StatTile value={ordersToday} label="Orders today" />
           <StatTile value={purchaseTotal} label="To purchase" />
         </div>
 

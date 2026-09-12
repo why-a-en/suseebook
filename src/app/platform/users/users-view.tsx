@@ -134,7 +134,7 @@ function UserSheet({
                 </span>
                 {user.isOperator ? (
                   <p className="font-ui text-small text-text-body">
-                    Platform operator — no tenant Organization.
+                    Platform operator — no tenant Store.
                   </p>
                 ) : user.memberships.length === 0 ? (
                   <p className="font-ui text-small text-text-body">None.</p>

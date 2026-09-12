@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
-import { withCurrentStore } from "@/lib/tenancy";
+import { withCurrentOrganization } from "@/lib/tenancy";
 import { orderItems } from "@/db/schema";
 
 async function advance(
@@ -11,7 +11,7 @@ async function advance(
   to: "received" | "packed" | "completed",
   timestampColumn: "receivedAt" | "packedAt" | "completedAt",
 ) {
-  await withCurrentStore(async ({ organizationId, storeId, tx }) => {
+  await withCurrentOrganization(async ({ organizationId, tx }) => {
     await tx
       .update(orderItems)
       .set({ status: to, [timestampColumn]: new Date() })
@@ -19,7 +19,6 @@ async function advance(
         and(
           eq(orderItems.id, orderItemId),
           eq(orderItems.organizationId, organizationId),
-          eq(orderItems.storeId, storeId),
           eq(orderItems.status, from),
         ),
       );

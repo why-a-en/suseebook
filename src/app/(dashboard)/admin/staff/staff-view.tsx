@@ -20,7 +20,6 @@ import {
 import { Icon } from "@/components/icon";
 import type { PendingInvitation } from "@/lib/auth";
 import type { StaffMember } from "@/services/staff";
-import type { Store } from "@/services/stores";
 import type { AppRole } from "@/services/types";
 import {
   addStaffAction,
@@ -46,12 +45,10 @@ const ROLE_LABELS: Record<AppRole, string> = {
 
 export function StaffView({
   staff,
-  stores,
   currentUserId,
   pendingInvitations,
 }: {
   staff: StaffMember[];
-  stores: Store[];
   currentUserId: string;
   pendingInvitations: PendingInvitation[];
 }) {
@@ -79,14 +76,6 @@ export function StaffView({
                 <span className="truncate font-ui text-small text-text-faint">
                   {member.email}
                 </span>
-                {/* Hidden for the common case of one Store — see Settings'
-                    switcher for the same rule; listing it on every row when
-                    it's the only one is just noise. */}
-                {stores.length > 1 && (
-                  <span className="truncate font-ui text-small text-text-faint">
-                    {member.storeNames.length > 0 ? member.storeNames.join(", ") : "No stores"}
-                  </span>
-                )}
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 {member.status === "suspended" && (

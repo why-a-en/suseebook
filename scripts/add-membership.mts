@@ -1,38 +1,28 @@
-// Adds an existing person to another Organization.
+// Adds an existing person to another Store.
 //
 // This is the script that makes a shared Supplier work — one sourcer buying
 // for several resellers, with one login rather than an email address per
 // client (docs/adr/0002-multi-tenancy-mvp.md). If the person is new to the
 // platform entirely, pass a password and an account is created for them.
 //
+// A Store IS the tenant now (ADR-0005 Phase 3) — there is no sub-Store grant
+// to also pick, so this is just `(email, store, role)`.
+//
 //   pnpm member:add supplier@example.com acme-resale supplier
 //   pnpm member:add newperson@example.com acme-resale supplier "Full Name" <password>
-//   pnpm member:add cs@example.com acme-resale support_agent --stores "Main,Yangon Downtown"
 import { config as loadEnv } from "dotenv";
 loadEnv({ path: ".env.local" });
 
 const { auth } = await import("../src/lib/auth/config");
-const { db, withOrganizationScope } = await import("../src/db/client");
-const { organizations, memberStores, members, stores, users } = await import("../src/db/schema");
+const { db } = await import("../src/db/client");
+const { organizations, members, users } = await import("../src/db/schema");
 const { and, eq } = await import("drizzle-orm");
 
-const argv = process.argv.slice(2);
+const [email, storeSlug, role, fullName, password] = process.argv.slice(2);
 
-// `--stores "A,B"` anywhere in the args; omitted means "all of the org's
-// stores" (a sane script default — trim later from Settings). The rest are
-// positional, unchanged.
-let storeNames: string[] | null = null;
-const flagAt = argv.indexOf("--stores");
-if (flagAt !== -1) {
-  storeNames = (argv[flagAt + 1] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
-  argv.splice(flagAt, 2);
-}
-
-const [email, orgSlug, role, fullName, password] = argv;
-
-if (!email || !orgSlug || !role) {
+if (!email || !storeSlug || !role) {
   console.error(
-    'Usage: pnpm member:add <email> <organization-slug> <admin|support_agent|supplier> ["Full Name" <password>] [--stores "A,B"]',
+    'Usage: pnpm member:add <email> <store-slug> <admin|support_agent|supplier> ["Full Name" <password>]',
   );
   process.exit(1);
 }
@@ -42,14 +32,14 @@ if (role !== "admin" && role !== "support_agent" && role !== "supplier") {
   process.exit(1);
 }
 
-const [org] = await db
+const [store] = await db
   .select()
   .from(organizations)
-  .where(eq(organizations.slug, orgSlug))
+  .where(eq(organizations.slug, storeSlug))
   .limit(1);
 
-if (!org) {
-  console.error(`No Organization with slug "${orgSlug}".`);
+if (!store) {
+  console.error(`No Store with slug "${storeSlug}".`);
   process.exit(1);
 }
 
@@ -71,48 +61,17 @@ if (!user) {
 const [existing] = await db
   .select({ id: members.id })
   .from(members)
-  .where(and(eq(members.userId, user.id), eq(members.organizationId, org.id)))
+  .where(and(eq(members.userId, user.id), eq(members.organizationId, store.id)))
   .limit(1);
 
 if (existing) {
-  console.error(`${email} is already a member of "${org.name}".`);
+  console.error(`${email} is already a member of "${store.name}".`);
   process.exit(1);
 }
 
-const [member] = await db
-  .insert(members)
-  .values({ organizationId: org.id, userId: user.id, role })
-  .returning({ id: members.id });
+await db.insert(members).values({ organizationId: store.id, userId: user.id, role });
 
-// Resolve which Stores to grant. `stores` is RLS-scoped — read it through
-// the scope; `member_stores` is exempt.
-const orgStores = await withOrganizationScope(org.id, (tx) =>
-  tx.select({ id: stores.id, name: stores.name }).from(stores).where(eq(stores.organizationId, org.id)),
-);
-
-if (orgStores.length === 0) {
-  console.error(
-    `"${org.name}" has no stores yet — its Admin needs to create one first (they'll be prompted on next login).`,
-  );
-  process.exit(1);
-}
-
-let grantStores = orgStores;
-if (storeNames) {
-  grantStores = orgStores.filter((s) => storeNames!.includes(s.name));
-  const missing = storeNames.filter((n) => !orgStores.some((s) => s.name === n));
-  if (missing.length > 0) {
-    console.error(`No store named ${missing.map((m) => `"${m}"`).join(", ")} in "${org.name}".`);
-    process.exit(1);
-  }
-}
-
-await db
-  .insert(memberStores)
-  .values(grantStores.map((s) => ({ memberId: member.id, storeId: s.id })));
-
-console.log(`Added ${email} to "${org.name}" as ${role}.`);
-console.log(`Stores: ${grantStores.map((s) => s.name).join(", ")}`);
-console.log("They can switch between Organizations and Stores from Settings.");
+console.log(`Added ${email} to "${store.name}" as ${role}.`);
+console.log("They can switch between Stores from Settings.");
 
 process.exit(0);

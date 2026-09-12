@@ -1,9 +1,9 @@
 # Store as sole tenant — migration & build sequence
 
-**Status:** Ready for review — nothing executed
-**Last updated:** 2026-09-10
+**Status:** Phases 1-3 shipped; Phase 4 not started
+**Last updated:** 2026-09-12
 **Executes:** [ADR-0005](../adr/0005-store-as-sole-tenant.md)
-**Supersedes work:** the cross-Store Orders-log filter (`feat/orders-store-filter`) is partly reverted in Phase 3.
+**Supersedes work:** the cross-Store Orders-log filter (`feat/orders-store-filter`) was reverted in Phase 3.
 
 ## Risk posture
 

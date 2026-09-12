@@ -59,7 +59,7 @@ export async function createOrganizationAction(
   } catch {
     return {
       error:
-        "The Organization was created and the invitation recorded, but the email failed to send.",
+        "The Store was created and the invitation recorded, but the email failed to send.",
     };
   }
 

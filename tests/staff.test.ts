@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq, inArray } from "drizzle-orm";
 import { db, withOrganizationScope } from "@/db/client";
-import { accounts, memberStores, members, organizations, stores, users } from "@/db/schema";
+import { accounts, members, organizations, users } from "@/db/schema";
 import { auth } from "@/lib/auth/config";
 import { hashPassword } from "@/lib/auth/hash";
 import { generateTemporaryPassword } from "@/services/password";
@@ -11,13 +11,12 @@ import { ServiceError, type AppRole, type ServiceContext } from "@/services/type
 const TAG = `staff-${Date.now()}`;
 
 let orgId: string;
-let storeId: string;
 let adminUserId: string;
 let adminMemberId: string;
 
 function asAdmin<T>(fn: (ctx: ServiceContext) => Promise<T>) {
   return withOrganizationScope(orgId, (tx) =>
-    fn({ organizationId: orgId, storeId, userId: adminUserId, tx }),
+    fn({ organizationId: orgId, userId: adminUserId, tx }),
   );
 }
 
@@ -56,7 +55,6 @@ async function createTestMember(input: { name: string; email: string; role: AppR
     .insert(members)
     .values({ organizationId: orgId, userId: user.id, role: input.role })
     .returning({ id: members.id });
-  await db.insert(memberStores).values({ memberId: member.id, storeId });
   return { memberId: member.id, userId: user.id, name: user.name, email: user.email, temporaryPassword };
 }
 
@@ -78,17 +76,6 @@ beforeAll(async () => {
     .values({ organizationId: orgId, userId: adminUserId, role: "admin" })
     .returning({ id: members.id });
   adminMemberId = member.id;
-
-  // `stores` is RLS-scoped — insert through the scope. `member_stores` is
-  // exempt, so a plain insert is fine.
-  storeId = await withOrganizationScope(orgId, async (tx) => {
-    const [store] = await tx
-      .insert(stores)
-      .values({ organizationId: orgId, name: `${TAG}-store` })
-      .returning({ id: stores.id });
-    return store.id;
-  });
-  await db.insert(memberStores).values({ memberId: adminMemberId, storeId });
 });
 
 afterAll(async () => {
@@ -97,21 +84,7 @@ afterAll(async () => {
     .from(members)
     .where(eq(members.organizationId, orgId));
   const userIds = owned.map((m) => m.userId);
-  // member_stores rows cascade from members, but delete explicitly so the
-  // order is unambiguous regardless of FK timing.
-  const memberRows = await db
-    .select({ id: members.id })
-    .from(members)
-    .where(eq(members.organizationId, orgId));
-  if (memberRows.length > 0) {
-    await db.delete(memberStores).where(
-      inArray(memberStores.memberId, memberRows.map((m) => m.id)),
-    );
-  }
   await db.delete(members).where(eq(members.organizationId, orgId));
-  await withOrganizationScope(orgId, (tx) =>
-    tx.delete(stores).where(eq(stores.organizationId, orgId)),
-  );
   if (userIds.length > 0) {
     await db.delete(accounts).where(inArray(accounts.userId, userIds));
     await db.delete(users).where(inArray(users.id, userIds));
@@ -150,7 +123,7 @@ describe("resetStaffPassword", () => {
     await expect(
       withOrganizationScope(other.id, (tx) =>
         resetStaffPassword(
-          { organizationId: other.id, storeId: null, userId: adminUserId, tx },
+          { organizationId: other.id, userId: adminUserId, tx },
           adminMemberId,
         ),
       ),

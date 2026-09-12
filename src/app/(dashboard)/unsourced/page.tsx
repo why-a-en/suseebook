@@ -1,5 +1,5 @@
 import { and, desc, eq } from "drizzle-orm";
-import { withCurrentStore } from "@/lib/tenancy";
+import { withCurrentOrganization } from "@/lib/tenancy";
 import { orderItems, orders, products, customers, CANT_SOURCE_REASON } from "@/db/schema";
 import { Screen, ScrollBody } from "@/components/ui/screen";
 import { TopBar } from "@/components/ui/top-bar";
@@ -22,7 +22,7 @@ function timeAgo(date: Date): string {
  *  reason and doesn't belong on this list. Both roles land here: Supplier
  *  caused it, Support needs to know their customer's order has a gap. */
 export default async function UnsourcedPage() {
-  const rows = await withCurrentStore(({ organizationId, storeId, tx }) =>
+  const rows = await withCurrentOrganization(({ organizationId, tx }) =>
     tx
       .select({
         id: orderItems.id,
@@ -38,7 +38,6 @@ export default async function UnsourcedPage() {
       .where(
         and(
           eq(orderItems.organizationId, organizationId),
-          eq(orderItems.storeId, storeId),
           eq(orderItems.status, "cancelled"),
           eq(orderItems.cancellationReason, CANT_SOURCE_REASON),
         ),

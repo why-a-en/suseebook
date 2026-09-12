@@ -2,14 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import {
-  listMemberships,
-  logout,
-  requireUser,
-  setActiveOrganization,
-  setActiveStore,
-  stopImpersonation,
-} from "@/lib/auth";
+import { listMemberships, logout, requireUser, setActiveOrganization, stopImpersonation } from "@/lib/auth";
 
 export async function logoutAction() {
   await logout();
@@ -35,18 +28,6 @@ export async function switchOrganizationAction(organizationId: string) {
 
   await setActiveOrganization(organizationId);
 
-  revalidatePath("/", "layout");
-  redirect("/");
-}
-
-/**
- * Re-stamps the session's active Store (see setActiveStore's own comment).
- * The grant check lives inside setActiveStore(); like the Organization
- * switch above, every page is re-rendered afterwards because cached output
- * belongs to the Store it was rendered for.
- */
-export async function switchStoreAction(storeId: string) {
-  await setActiveStore(storeId);
   revalidatePath("/", "layout");
   redirect("/");
 }

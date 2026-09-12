@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { and, eq, inArray } from "drizzle-orm";
-import { withCurrentStore } from "@/lib/tenancy";
+import { withCurrentOrganization } from "@/lib/tenancy";
 import { orderItems, CANT_SOURCE_REASON } from "@/db/schema";
 
 /**
@@ -16,14 +16,13 @@ import { orderItems, CANT_SOURCE_REASON } from "@/db/schema";
 export async function markPurchasedAction(orderItemIds: string[]) {
   if (orderItemIds.length === 0) return;
 
-  await withCurrentStore(async ({ organizationId, storeId, tx }) => {
+  await withCurrentOrganization(async ({ organizationId, tx }) => {
     await tx
       .update(orderItems)
       .set({ status: "purchased", purchasedAt: new Date() })
       .where(
         and(
           eq(orderItems.organizationId, organizationId),
-          eq(orderItems.storeId, storeId),
           inArray(orderItems.id, orderItemIds),
           eq(orderItems.status, "pending"),
         ),
@@ -50,14 +49,13 @@ export async function markPurchasedAction(orderItemIds: string[]) {
 export async function cantSourceAction(orderItemIds: string[]) {
   if (orderItemIds.length === 0) return;
 
-  await withCurrentStore(async ({ organizationId, storeId, tx }) => {
+  await withCurrentOrganization(async ({ organizationId, tx }) => {
     await tx
       .update(orderItems)
       .set({ status: "cancelled", cancellationReason: CANT_SOURCE_REASON, cancelledAt: new Date() })
       .where(
         and(
           eq(orderItems.organizationId, organizationId),
-          eq(orderItems.storeId, storeId),
           inArray(orderItems.id, orderItemIds),
           eq(orderItems.status, "pending"),
         ),

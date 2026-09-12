@@ -18,14 +18,16 @@ import {
   SheetFooter,
 } from "@/components/ui/sheet";
 import { Icon } from "@/components/icon";
-import { CheckboxField } from "@/components/ui/checkbox";
+import type { PendingInvitation } from "@/lib/auth";
 import type { StaffMember } from "@/services/staff";
 import type { Store } from "@/services/stores";
 import type { AppRole } from "@/services/types";
 import {
   addStaffAction,
+  cancelInviteAction,
   changeStaffRoleAction,
   removeStaffAction,
+  resendInviteAction,
   resetStaffPasswordAction,
   setStaffStatusAction,
 } from "./actions";
@@ -46,13 +48,16 @@ export function StaffView({
   staff,
   stores,
   currentUserId,
+  pendingInvitations,
 }: {
   staff: StaffMember[];
   stores: Store[];
   currentUserId: string;
+  pendingInvitations: PendingInvitation[];
 }) {
   const [adding, setAdding] = useState(false);
   const [selected, setSelected] = useState<StaffMember | null>(null);
+  const [selectedInvite, setSelectedInvite] = useState<PendingInvitation | null>(null);
 
   return (
     <Screen>
@@ -96,6 +101,24 @@ export function StaffView({
           );
         })}
 
+        {/* Hidden entirely once nobody's waiting — an empty "Pending"
+            section would just be noise below a Team list that already
+            says who's actually here. */}
+        {pendingInvitations.length > 0 && (
+          <>
+            <SectionHeader right={`${pendingInvitations.length}`}>Pending</SectionHeader>
+            {pendingInvitations.map((invite) => (
+              <Row key={invite.id} onClick={() => setSelectedInvite(invite)}>
+                <span className="min-w-0 flex-1 truncate">{invite.email}</span>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span className="font-ui text-small text-text-faint">{ROLE_LABELS[invite.role]}</span>
+                  <Icon name="chevron-right" size={16} className="text-text-faint" />
+                </div>
+              </Row>
+            ))}
+          </>
+        )}
+
         <div className="px-5 pt-5 pb-8">
           <Button full variant="secondary" icon="user-plus" onClick={() => setAdding(true)}>
             Add staff
@@ -103,8 +126,9 @@ export function StaffView({
         </div>
       </ScrollBody>
 
-      <AddStaffSheet open={adding} onOpenChange={setAdding} stores={stores} />
+      <AddStaffSheet open={adding} onOpenChange={setAdding} />
       <ManageStaffSheet member={selected} onClose={() => setSelected(null)} />
+      <ManageInviteSheet invite={selectedInvite} onClose={() => setSelectedInvite(null)} />
     </Screen>
   );
 }
@@ -112,41 +136,32 @@ export function StaffView({
 function AddStaffSheet({
   open,
   onOpenChange,
-  stores,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  stores: Store[];
 }) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       {/* The form only exists while the sheet is open, so useActionState is
-          fresh on every open — otherwise the previous submit's generated
-          password would still be on screen the next time it opened. */}
-      <SheetContent>
-        {open && <AddStaffForm stores={stores} onDone={() => onOpenChange(false)} />}
-      </SheetContent>
+          fresh on every open — otherwise the previous submit's confirmation
+          would still be on screen the next time it opened. */}
+      <SheetContent>{open && <AddStaffForm onDone={() => onOpenChange(false)} />}</SheetContent>
     </Sheet>
   );
 }
 
-function AddStaffForm({ stores, onDone }: { stores: Store[]; onDone: () => void }) {
+function AddStaffForm({ onDone }: { onDone: () => void }) {
   const [role, setRole] = useState<AppRole>("support_agent");
-  // Every Store checked by default: the common case (one Store, or a
-  // brand-new Admin's first hire) needs the Admin to change nothing rather
-  // than tick every box by hand.
-  const [storeIds, setStoreIds] = useState<string[]>(() => stores.map((s) => s.id));
   const [state, formAction, pending] = useActionState(addStaffAction, undefined);
 
-  // On success the sheet does NOT close by itself: the temporary password is
-  // the only thing standing between the new hire and their account, it is
-  // shown exactly once, and closing over it would lose it for good.
-  if (state?.temporaryPassword) {
+  // On success the sheet stays open on a confirmation — an invitation link
+  // has been emailed; nothing about this person exists yet beyond that.
+  if (state?.invitedEmail) {
     return (
       <>
-        <SheetHeader title="Staff added" />
+        <SheetHeader title="Invitation sent" />
         <SheetBody>
-          <IssuedPassword email={state.email!} password={state.temporaryPassword} />
+          <InviteSent email={state.invitedEmail} />
         </SheetBody>
         <SheetFooter>
           <Button full onClick={onDone}>
@@ -162,9 +177,6 @@ function AddStaffForm({ stores, onDone }: { stores: Store[]; onDone: () => void 
       <SheetHeader title="Add staff" />
       <form action={formAction}>
         <SheetBody className="grid gap-4">
-          <Field label="Name" required>
-            <Input name="name" autoComplete="off" placeholder="Aung Aung" />
-          </Field>
           <Field label="Email" required>
             <Input name="email" type="email" autoComplete="off" icon="at-sign" placeholder="name@example.com" />
           </Field>
@@ -172,36 +184,11 @@ function AddStaffForm({ stores, onDone }: { stores: Store[]; onDone: () => void 
             <SegmentedControl options={ROLE_OPTIONS} value={role} onChange={setRole} />
             <input type="hidden" name="role" value={role} />
           </Field>
-          {/* Hidden entirely for the common case of one Store, same rule as
-              the Settings switcher — nothing to choose, so nothing shown.
-              Its id still has to reach the server, via a plain hidden
-              input rather than the checkbox row below. */}
-          {stores.length > 1 ? (
-            <Field label="Stores" required>
-              <div className="grid gap-1">
-                {stores.map((s) => (
-                  <CheckboxField
-                    key={s.id}
-                    name="storeIds"
-                    value={s.id}
-                    checked={storeIds.includes(s.id)}
-                    onCheckedChange={(checked) =>
-                      setStoreIds((prev) => (checked ? [...prev, s.id] : prev.filter((id) => id !== s.id)))
-                    }
-                  >
-                    {s.name}
-                  </CheckboxField>
-                ))}
-              </div>
-            </Field>
-          ) : (
-            storeIds.map((id) => <input key={id} type="hidden" name="storeIds" value={id} />)
-          )}
           {state?.error && <p className="font-ui text-small text-danger">{state.error}</p>}
         </SheetBody>
         <SheetFooter>
           <Button full type="submit" disabled={pending}>
-            {pending ? "Adding…" : "Add to Organization"}
+            {pending ? "Sending…" : "Send invitation"}
           </Button>
         </SheetFooter>
       </form>
@@ -209,16 +196,27 @@ function AddStaffForm({ stores, onDone }: { stores: Store[]; onDone: () => void 
   );
 }
 
-/** Shown once. Nothing stores this in readable form, here or on the server. */
-function IssuedPassword({ email, password }: { email: string; password: string }) {
+/** New-member path: an invitation link, not a password — they set their own
+ *  on accept (docs/adr/0006-transactional-email.md). */
+function InviteSent({ email }: { email: string }) {
   return (
     <div className="grid gap-3">
       <p className="font-ui text-small text-text-body">
-        Give this to <span className="font-medium">{email}</span>. It is shown once, and
-        they must replace it the first time they sign in.
+        We&apos;ve sent an invitation to <span className="font-medium">{email}</span>. They&apos;ll
+        set their own name and password when they accept it.
       </p>
-      <p className="rounded-md border border-line-hairline bg-surface-raised px-4 py-3 text-center font-mono text-code tracking-label select-all">
-        {password}
+    </div>
+  );
+}
+
+/** Reset-password path: a generated temporary password, emailed —
+ *  the one credential this app still issues (docs/adr/0006). */
+function InvitationSent({ email }: { email: string }) {
+  return (
+    <div className="grid gap-3">
+      <p className="font-ui text-small text-text-body">
+        We&apos;ve emailed sign-in details to <span className="font-medium">{email}</span>.
+        They must choose a new password the first time they sign in.
       </p>
     </div>
   );
@@ -232,10 +230,10 @@ function ManageStaffSheet({
   onClose: () => void;
 }) {
   const [pending, startTransition] = useTransition();
-  const [issued, setIssued] = useState<{ email: string; password: string } | null>(null);
+  const [resetSentTo, setResetSentTo] = useState<string | null>(null);
 
   function close() {
-    setIssued(null);
+    setResetSentTo(null);
     onClose();
   }
 
@@ -252,13 +250,13 @@ function ManageStaffSheet({
     });
   }
 
-  if (issued) {
+  if (resetSentTo) {
     return (
       <Sheet open onOpenChange={(open) => !open && close()}>
         <SheetContent>
-          <SheetHeader title="New password" />
+          <SheetHeader title="New password sent" />
           <SheetBody>
-            <IssuedPassword email={issued.email} password={issued.password} />
+            <InvitationSent email={resetSentTo} />
           </SheetBody>
           <SheetFooter>
             <Button full onClick={close}>
@@ -302,7 +300,7 @@ function ManageStaffSheet({
                         toast.error(result.error);
                         return;
                       }
-                      setIssued({ email: result.email!, password: result.temporaryPassword! });
+                      setResetSentTo(result.emailedTo!);
                     })
                   }
                 >
@@ -335,6 +333,68 @@ function ManageStaffSheet({
                   onClick={() => run(() => removeStaffAction(member.memberId))}
                 >
                   Remove from Organization
+                </Button>
+              </div>
+            </SheetBody>
+          </>
+        )}
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function ManageInviteSheet({
+  invite,
+  onClose,
+}: {
+  invite: PendingInvitation | null;
+  onClose: () => void;
+}) {
+  const [pending, startTransition] = useTransition();
+
+  function resend() {
+    if (!invite) return;
+    startTransition(async () => {
+      const result = await resendInviteAction(invite.email, invite.role);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(`Invitation resent to ${invite.email}.`);
+      onClose();
+    });
+  }
+
+  function cancel() {
+    if (!invite) return;
+    startTransition(async () => {
+      const result = await cancelInviteAction(invite.id);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      onClose();
+    });
+  }
+
+  return (
+    <Sheet open={invite !== null} onOpenChange={(open) => !open && onClose()}>
+      <SheetContent>
+        {invite && (
+          <>
+            <SheetHeader title={invite.email} eyebrow={`Invited as ${ROLE_LABELS[invite.role]}`} />
+            <SheetBody className="grid gap-5">
+              <p className="font-ui text-small text-text-faint">
+                Expires{" "}
+                {invite.expiresAt.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}.
+                Not yet accepted — nothing about this person exists beyond this invitation.
+              </p>
+              <div className="grid gap-3">
+                <Button full variant="secondary" disabled={pending} onClick={resend}>
+                  Resend
+                </Button>
+                <Button full variant="danger" disabled={pending} onClick={cancel}>
+                  Cancel invitation
                 </Button>
               </div>
             </SheetBody>

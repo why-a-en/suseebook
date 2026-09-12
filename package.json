@@ -13,6 +13,7 @@
     "org:create": "tsx scripts/create-organization.mts",
     "member:add": "tsx scripts/add-membership.mts",
     "platform:add": "tsx scripts/add-platform-admin.mts",
+    "email:test": "tsx scripts/send-test-email.mts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -34,6 +35,7 @@
     "react": "19.2.8",
     "react-day-picker": "^10.0.1",
     "react-dom": "19.2.8",
+    "resend": "^6.26.0",
     "sonner": "^2.0.8",
     "tailwind-merge": "^3.6.0"
   },

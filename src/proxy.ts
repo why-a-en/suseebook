@@ -22,11 +22,17 @@ export function proxy(request: NextRequest) {
   const hasSessionCookie =
     request.cookies.has(SESSION_COOKIE_NAME) ||
     request.cookies.has(SECURE_SESSION_COOKIE_NAME);
-  const isLoginPage = request.nextUrl.pathname.startsWith("/login");
+  const { pathname } = request.nextUrl;
+  // /invite/accept is the one route a visitor reaches with *no* session at
+  // all — a brand-new invitee clicking the link in sendInvitationEmail
+  // (docs/adr/0006-transactional-email.md). Gating it here the same way as
+  // every other route would bounce them to /login before the page — the one
+  // place that actually reads ?token= — ever renders, silently dropping it.
+  const isPublicRoute = pathname.startsWith("/login") || pathname.startsWith("/invite/accept");
 
-  if (!hasSessionCookie && !isLoginPage) {
+  if (!hasSessionCookie && !isPublicRoute) {
     const loginUrl = new URL("/login", request.url);
-    loginUrl.searchParams.set("from", request.nextUrl.pathname);
+    loginUrl.searchParams.set("from", pathname);
     return NextResponse.redirect(loginUrl);
   }
 

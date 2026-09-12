@@ -1,5 +1,5 @@
 import { and, eq, inArray, ne } from "drizzle-orm";
-import { accounts, memberStores, members, stores, users } from "@/db/schema";
+import { accounts, memberStores, members, organizations, stores, users } from "@/db/schema";
 import { hashPassword } from "@/lib/auth/hash";
 import { generateTemporaryPassword } from "./password";
 import { ServiceError, type AppRole, type ServiceContext } from "./types";
@@ -24,7 +24,8 @@ export type StaffMember = {
   joinedAt: Date;
   /** Store names this member can work in, in grant order. Empty means no
    *  access at all — reachable only if every one of their grants was later
-   *  removed, since addStaff below always creates at least one. */
+   *  removed; accepting an invitation grants every Store the Organization
+   *  currently has (auth/index.ts's finalizeAcceptance). */
   storeNames: string[];
 };
 
@@ -69,96 +70,6 @@ export async function listStaff(ctx: ServiceContext): Promise<StaffMember[]> {
 }
 
 /**
- * Creates a brand-new person and adds them to this Organization.
- *
- * Deliberately refuses an email that already exists anywhere on the
- * platform. Linking an existing account into an Organization is how a shared
- * Supplier works, but doing it from here would let any Admin attach a
- * stranger's account to their own Organization without that person agreeing
- * — and would leak whether a given email is registered at all. That stays a
- * script we run (`pnpm member:add`), which is friction on purpose.
- */
-export async function addStaff(
-  ctx: ServiceContext,
-  input: { name: string; email: string; role: AppRole; storeIds: string[] },
-): Promise<StaffMember & { temporaryPassword: string }> {
-  const name = input.name.trim();
-  const email = input.email.trim().toLowerCase();
-
-  if (!name) throw new ServiceError("Name is required.");
-  if (!email) throw new ServiceError("Email is required.");
-  if (input.storeIds.length === 0) {
-    throw new ServiceError("Pick at least one Store this person can work in.");
-  }
-
-  const storeRows = await ctx.tx
-    .select({ id: stores.id, name: stores.name })
-    .from(stores)
-    .where(and(inArray(stores.id, input.storeIds), eq(stores.organizationId, ctx.organizationId)));
-  if (storeRows.length !== input.storeIds.length) {
-    throw new ServiceError("One of those Stores isn't in this Organization.");
-  }
-
-  const [existing] = await ctx.tx
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.email, email))
-    .limit(1);
-
-  if (existing) {
-    throw new ServiceError(
-      "That email already has an account. Ask us to add them to this Organization.",
-    );
-  }
-
-  const temporaryPassword = generateTemporaryPassword();
-
-  const [user] = await ctx.tx
-    .insert(users)
-    // Flagged from birth: this password was chosen by the Admin, not by
-    // the person who will use it.
-    .values({ name, email, mustChangePassword: true })
-    .returning({ id: users.id, name: users.name, email: users.email });
-
-  // Written by hand rather than through better-auth's sign-up endpoint,
-  // which would also issue a session and swap the Admin's own login. The
-  // shape has to match what sign-in looks up exactly: issuer
-  // `local:credential`, providerId `credential`, accountId = the user id.
-  // Verified empirically against better-auth 1.7.2 — see
-  // docs/plans/better-auth-migration.md.
-  await ctx.tx.insert(accounts).values({
-    issuer: "local:credential",
-    accountId: user.id,
-    providerId: "credential",
-    userId: user.id,
-    password: await hashPassword(temporaryPassword),
-  });
-
-  const [member] = await ctx.tx
-    .insert(members)
-    .values({ organizationId: ctx.organizationId, userId: user.id, role: input.role })
-    .returning({ id: members.id, status: members.status, createdAt: members.createdAt });
-
-  await ctx.tx
-    .insert(memberStores)
-    .values(input.storeIds.map((storeId) => ({ memberId: member.id, storeId })));
-
-  // The only time this value exists in readable form. The caller shows it
-  // to the Admin once; nothing persists it.
-  return {
-    memberId: member.id,
-    userId: user.id,
-    name: user.name,
-    email: user.email,
-    role: input.role,
-    status: member.status,
-    joinedAt: member.createdAt,
-    storeNames: storeRows.map((s) => s.name),
-    temporaryPassword,
-  };
-}
-
-/**
  * Issues a new temporary password for a member who has lost theirs, and
  * flags the account so they must replace it on next sign-in.
  *
@@ -175,7 +86,7 @@ export async function addStaff(
 export async function resetStaffPassword(
   ctx: ServiceContext,
   memberId: string,
-): Promise<{ email: string; temporaryPassword: string }> {
+): Promise<{ email: string; name: string; organizationName: string; temporaryPassword: string }> {
   const target = await requireMember(ctx, memberId);
   const temporaryPassword = generateTemporaryPassword();
 
@@ -196,9 +107,20 @@ export async function resetStaffPassword(
     .update(users)
     .set({ mustChangePassword: true, updatedAt: new Date() })
     .where(eq(users.id, target.userId))
-    .returning({ email: users.email });
+    .returning({ email: users.email, name: users.name });
 
-  return { email: user.email, temporaryPassword };
+  const [org] = await ctx.tx
+    .select({ name: organizations.name })
+    .from(organizations)
+    .where(eq(organizations.id, ctx.organizationId))
+    .limit(1);
+
+  return {
+    email: user.email,
+    name: user.name,
+    organizationName: org.name,
+    temporaryPassword,
+  };
 }
 
 export async function changeStaffRole(

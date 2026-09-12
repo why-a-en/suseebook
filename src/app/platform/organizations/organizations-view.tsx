@@ -97,24 +97,21 @@ function NewOrgSheet({
 function NewOrgForm({ onDone }: { onDone: () => void }) {
   const [state, formAction, pending] = useActionState(createOrganizationAction, undefined);
 
-  // On success the sheet stays open: the temporary password is the only way
-  // the new Admin gets in, shown exactly once.
-  if (state?.temporaryPassword) {
+  // On success the sheet stays open on a confirmation — an invitation link
+  // has been emailed; nothing about the Admin exists yet beyond that.
+  if (state?.invitedEmail) {
     return (
       <>
         <SheetHeader title="Organization created" />
         <SheetBody>
           <div className="grid gap-3">
             <p className="font-ui text-small text-text-body">
-              Slug <code className="font-mono text-code">{state.slug}</code>. Give this
-              password to <span className="font-medium">{state.adminEmail}</span> — it is
-              shown once, and they must replace it on first sign-in.
-            </p>
-            <p className="rounded-md border border-line-hairline bg-surface-raised px-4 py-3 text-center font-mono text-code tracking-label select-all">
-              {state.temporaryPassword}
+              Slug <code className="font-mono text-code">{state.slug}</code>. We&apos;ve sent an
+              invitation to <span className="font-medium">{state.invitedEmail}</span>.
             </p>
             <p className="font-ui text-small text-text-faint">
-              They&apos;ll set up their first store and team when they log in.
+              They&apos;ll set their own name and password on accept, then set up their first
+              Store and team when they log in.
             </p>
           </div>
         </SheetBody>
@@ -134,9 +131,6 @@ function NewOrgForm({ onDone }: { onDone: () => void }) {
         <SheetBody className="grid gap-4">
           <Field label="Organization name" required hint="The slug is derived from this.">
             <Input name="organizationName" autoComplete="off" placeholder="Acme Resale" />
-          </Field>
-          <Field label="First Admin — name" required>
-            <Input name="adminName" autoComplete="off" placeholder="Aung Aung" />
           </Field>
           <Field label="First Admin — email" required>
             <Input name="adminEmail" type="email" autoComplete="off" icon="at-sign" placeholder="name@example.com" />

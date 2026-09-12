@@ -2,10 +2,10 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { requireAdmin } from "@/lib/auth";
+import { inviteToOrganization, requireAdmin } from "@/lib/auth";
+import { assertDeliverableEmail, normalizeEmail } from "@/lib/email/address";
 import { withCurrentOrganization } from "@/lib/tenancy";
 import { createStore } from "@/services/stores";
-import { addStaff } from "@/services/staff";
 import { ServiceError, type AppRole } from "@/services/types";
 
 // First-run onboarding, Admin only (the (dashboard) layout only sends
@@ -38,7 +38,7 @@ export async function createFirstStoreAction(
 }
 
 export type AddFirstStaffState =
-  | { error?: string; email?: string; temporaryPassword?: string }
+  | { error?: string; invitedEmail?: string }
   | undefined;
 
 export async function addFirstStaffAction(
@@ -46,21 +46,28 @@ export async function addFirstStaffAction(
   formData: FormData,
 ): Promise<AddFirstStaffState> {
   await requireAdmin();
+
+  const email = normalizeEmail(String(formData.get("email") ?? ""));
+  const role = String(formData.get("role") ?? "support_agent") as AppRole;
+
   try {
-    const result = await withCurrentOrganization((ctx) =>
-      addStaff(ctx, {
-        name: String(formData.get("name") ?? ""),
-        email: String(formData.get("email") ?? ""),
-        role: String(formData.get("role") ?? "support_agent") as AppRole,
-        storeIds: formData.getAll("storeIds").map(String),
-      }),
-    );
-    revalidatePath("/", "layout");
-    return { email: result.email, temporaryPassword: result.temporaryPassword };
+    await assertDeliverableEmail(email);
   } catch (error) {
     if (error instanceof ServiceError) return { error: error.message };
     throw error;
   }
+
+  try {
+    await inviteToOrganization({ email, role });
+  } catch (error) {
+    return {
+      error:
+        error instanceof Error ? error.message : "Couldn't send the invitation. You can retry from Staff.",
+    };
+  }
+
+  revalidatePath("/", "layout");
+  return { invitedEmail: email };
 }
 
 export async function finishOnboardingAction() {

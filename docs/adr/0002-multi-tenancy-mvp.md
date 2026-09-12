@@ -125,6 +125,14 @@ Billing and plans, usage limits, self-serve signup, custom domains,
 per-tenant audit logs, SSO, invitations and password reset. None constrains
 the schema, so postponing them costs nothing.
 
+> **Update ([ADR-0005](./0005-store-as-sole-tenant.md),
+> [ADR-0006](./0006-transactional-email.md)):** invitations and credential
+> delivery are no longer deferred. Joining a Store is by invitation link
+> (the person sets their own password); a password *reset* is emailed as a
+> temporary password via Resend (`suseeos.com`), deliverability-checked
+> first. Still deferred: tenant-facing self-serve signup, and any
+> non-credential email.
+
 > **Update (`feat/platform-console`):** the first slice of the deferred
 > "platform-admin console" now exists as a **separate surface** — `/platform`,
 > its own layout and routes, no tenant chrome. A platform operator has **no

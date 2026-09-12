@@ -90,7 +90,7 @@ beforeAll(async () => {
   await asOrg(orgId, async ({ tx }) => {
     const [customer] = await tx
       .insert(customers)
-      .values({ organizationId: orgId, storeId, name: `${TAG}-customer`, phone: "0900000000" })
+      .values({ organizationId: orgId, name: `${TAG}-customer`, phone: "0900000000" })
       .returning({ id: customers.id });
     customerId = customer.id;
 

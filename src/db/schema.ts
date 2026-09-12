@@ -363,13 +363,6 @@ export const customers = pgTable(
     organizationId: uuid("organization_id")
       .notNull()
       .references(() => organizations.id),
-    // Which counter this Customer walked into. Denormalized rather than a
-    // tag-only concept — see stores' own comment — so every query that lists
-    // or searches Customers can filter by it directly. Not itself an RLS
-    // clause: organizationId above is still the only tenant boundary.
-    storeId: uuid("store_id")
-      .notNull()
-      .references(() => stores.id),
     name: text("name").notNull(),
     phone: text("phone").notNull(),
     // Nullable at the DB level even though the create-customer form
@@ -381,7 +374,10 @@ export const customers = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    index("customers_organization_store_name_idx").on(table.organizationId, table.storeId, table.name),
+    // A Customer used to be denormalized to the Store they first walked
+    // into (ADR-0005 Phase 2: dropped — a person is one Customer per
+    // tenant, matching Products, visible from every Store).
+    index("customers_organization_name_idx").on(table.organizationId, table.name),
     tenantIsolationPolicy(),
   ],
 ).enableRLS();

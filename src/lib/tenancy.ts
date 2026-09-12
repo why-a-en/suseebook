@@ -15,8 +15,9 @@ type StoreContext = OrganizationContext & { storeId: string };
  * `ctx.storeId` rides along but is NOT re-validated by this wrapper the way
  * organizationId effectively is (via RLS) — Store is a tag, not a tenant
  * boundary (see db/schema.ts's `stores` comment), and can be null. Callers
- * that touch Store-scoped tables (Orders, Order Items, Customers) want
- * withCurrentStore below instead, which guarantees a non-null one.
+ * that touch Store-scoped tables (Orders, Order Items) want withCurrentStore
+ * below instead, which guarantees a non-null one. Customers moved off this
+ * list in ADR-0005 Phase 2 — they're Organization-wide now, like Products.
  *
  * Redirects to /login if there's no session (via requireUser()).
  */

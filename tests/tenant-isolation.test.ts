@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { and, eq, inArray } from "drizzle-orm";
 import { db, withOrganizationScope } from "@/db/client";
-import { customers, members, organizations, stores, users } from "@/db/schema";
+import { customers, members, organizations, users } from "@/db/schema";
 
 // The test ADR-0002 §9 requires: proof that one Organization cannot read
 // another's data, run against real Postgres rather than a mock. RLS is the
@@ -18,8 +18,6 @@ const TAG = `isolation-${Date.now()}`;
 
 let orgA: string;
 let orgB: string;
-let storeA: string;
-let storeB: string;
 let sharedSupplierId: string;
 let customerAId: string;
 let customerBId: string;
@@ -37,23 +35,6 @@ beforeAll(async () => {
     .returning({ id: organizations.id });
   orgA = a.id;
   orgB = b.id;
-
-  // `stores` IS RLS-scoped, but these inserts run before any scope is set —
-  // do them through the scope like the customers below.
-  storeA = await withOrganizationScope(orgA, async (tx) => {
-    const [row] = await tx
-      .insert(stores)
-      .values({ organizationId: orgA, name: `${TAG}-store-A` })
-      .returning({ id: stores.id });
-    return row.id;
-  });
-  storeB = await withOrganizationScope(orgB, async (tx) => {
-    const [row] = await tx
-      .insert(stores)
-      .values({ organizationId: orgB, name: `${TAG}-store-B` })
-      .returning({ id: stores.id });
-    return row.id;
-  });
 
   // A Supplier working for both resellers — the case that forced identity to
   // split from membership in the first place.
@@ -73,7 +54,7 @@ beforeAll(async () => {
   customerAId = await withOrganizationScope(orgA, async (tx) => {
     const [row] = await tx
       .insert(customers)
-      .values({ organizationId: orgA, storeId: storeA, name: `${TAG}-customer-A`, phone: "0900000001" })
+      .values({ organizationId: orgA, name: `${TAG}-customer-A`, phone: "0900000001" })
       .returning({ id: customers.id });
     return row.id;
   });
@@ -81,21 +62,15 @@ beforeAll(async () => {
   customerBId = await withOrganizationScope(orgB, async (tx) => {
     const [row] = await tx
       .insert(customers)
-      .values({ organizationId: orgB, storeId: storeB, name: `${TAG}-customer-B`, phone: "0900000002" })
+      .values({ organizationId: orgB, name: `${TAG}-customer-B`, phone: "0900000002" })
       .returning({ id: customers.id });
     return row.id;
   });
 });
 
 afterAll(async () => {
-  await withOrganizationScope(orgA, async (tx) => {
-    await tx.delete(customers).where(eq(customers.organizationId, orgA));
-    await tx.delete(stores).where(eq(stores.organizationId, orgA));
-  });
-  await withOrganizationScope(orgB, async (tx) => {
-    await tx.delete(customers).where(eq(customers.organizationId, orgB));
-    await tx.delete(stores).where(eq(stores.organizationId, orgB));
-  });
+  await withOrganizationScope(orgA, (tx) => tx.delete(customers).where(eq(customers.organizationId, orgA)));
+  await withOrganizationScope(orgB, (tx) => tx.delete(customers).where(eq(customers.organizationId, orgB)));
   await db.delete(members).where(eq(members.userId, sharedSupplierId));
   await db.delete(users).where(eq(users.id, sharedSupplierId));
   await db.delete(organizations).where(inArray(organizations.id, [orgA, orgB]));
@@ -128,7 +103,7 @@ describe("tenant isolation", () => {
           .insert(customers)
           // Scoped to A, claiming to belong to B. The policy's WITH CHECK
           // fallback must refuse this.
-          .values({ organizationId: orgB, storeId: storeB, name: `${TAG}-smuggled`, phone: "0900000003" }),
+          .values({ organizationId: orgB, name: `${TAG}-smuggled`, phone: "0900000003" }),
       ),
     ).rejects.toThrow();
 

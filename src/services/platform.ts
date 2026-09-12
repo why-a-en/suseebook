@@ -1,11 +1,15 @@
 import { count, desc, eq, gte } from "drizzle-orm";
 import { db } from "@/db/client";
-import { accounts, members, organizations, users } from "@/db/schema";
+import { invitations, members, organizations, users } from "@/db/schema";
 import { isPlatformAdmin } from "@/lib/auth/platform-admins";
-import { hashPassword } from "@/lib/auth/hash";
 import { isValidEmailSyntax } from "@/lib/email/address";
-import { generateTemporaryPassword } from "./password";
 import { ServiceError, type AppRole } from "./types";
+
+// Invitations expire in 7 days everywhere they're issued — kept in sync by
+// hand with the org plugin's own `invitationExpiresIn` (config.ts) since
+// this file writes the row directly rather than through the plugin (see
+// createOrganization's own comment for why).
+const INVITATION_EXPIRES_IN_MS = 60 * 60 * 24 * 7 * 1000;
 
 // The platform console — provisioning and suspending client Organizations.
 // This is *us*, the operator, not a tenant Admin, so unlike every other
@@ -232,37 +236,34 @@ export type NewOrganization = {
   organizationId: string;
   slug: string;
   adminEmail: string;
-  temporaryPassword: string;
+  invitationId: string;
 };
 
 /**
- * Creates a client Organization and its first Admin, in one transaction —
- * the in-app equivalent of `pnpm org:create`.
+ * Creates a client Organization and invites its first Admin, in one
+ * transaction — the in-app equivalent of `pnpm org:create`.
  *
- * The Admin account is written by hand (not `auth.api.signUpEmail`), same as
- * addStaff and for the same reason: signUpEmail issues a session, which
- * inside a Server Action would swap *our* login for the new Admin's. The
- * account shape has to match sign-in exactly — issuer `local:credential`,
- * providerId `credential`, accountId = user id.
+ * The invitation is written directly rather than through the org plugin's
+ * `createInvitation` endpoint: that endpoint requires a session with an
+ * *active membership* in the target Organization (`orgSessionMiddleware`),
+ * and a Platform Admin has no membership anywhere — they aren't a tenant
+ * user at all (ADR-0002). Same shape either way: a `pending` row, the
+ * invitee sets their own name and password on accept
+ * (docs/adr/0005-store-as-sole-tenant.md §5/§6).
  */
 export async function createOrganization(input: {
   organizationName: string;
-  adminName: string;
   adminEmail: string;
+  invitedById: string;
 }): Promise<NewOrganization> {
   const name = input.organizationName.trim();
-  const adminName = input.adminName.trim();
   const adminEmail = input.adminEmail.trim().toLowerCase();
 
   if (!name) throw new ServiceError("Organization name is required.");
-  if (!adminName) throw new ServiceError("The Admin's name is required.");
   if (!isValidEmailSyntax(adminEmail)) throw new ServiceError("Enter a valid Admin email.");
 
   const slug = slugify(name);
   if (!slug) throw new ServiceError("That name has no letters or digits to slugify.");
-
-  const temporaryPassword = generateTemporaryPassword();
-  const passwordHash = await hashPassword(temporaryPassword);
 
   return db.transaction(async (tx) => {
     const [slugTaken] = await tx
@@ -274,40 +275,27 @@ export async function createOrganization(input: {
       throw new ServiceError(`An Organization named something like "${name}" already exists.`);
     }
 
-    const [emailTaken] = await tx
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.email, adminEmail))
-      .limit(1);
-    if (emailTaken) {
-      throw new ServiceError("That email already has an account on the platform.");
-    }
-
     const [org] = await tx
       .insert(organizations)
       .values({ name, slug })
       .returning({ id: organizations.id, slug: organizations.slug });
 
-    const [user] = await tx
-      .insert(users)
-      .values({ name: adminName, email: adminEmail, mustChangePassword: true })
-      .returning({ id: users.id });
-
-    await tx.insert(accounts).values({
-      issuer: "local:credential",
-      accountId: user.id,
-      providerId: "credential",
-      userId: user.id,
-      password: passwordHash,
-    });
-
-    await tx.insert(members).values({ organizationId: org.id, userId: user.id, role: "admin" });
+    const [invitation] = await tx
+      .insert(invitations)
+      .values({
+        organizationId: org.id,
+        email: adminEmail,
+        role: "admin",
+        inviterId: input.invitedById,
+        expiresAt: new Date(Date.now() + INVITATION_EXPIRES_IN_MS),
+      })
+      .returning({ id: invitations.id });
 
     return {
       organizationId: org.id,
       slug: org.slug,
       adminEmail,
-      temporaryPassword,
+      invitationId: invitation.id,
     };
   });
 }

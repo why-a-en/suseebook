@@ -1,17 +1,17 @@
 import {
   Body,
-  Column,
   Container,
   Head,
   Html,
+  Img,
   Link,
   Preview,
-  Row,
   Section,
   Text,
 } from "react-email";
 import type { ReactNode } from "react";
 import { brand, FONT_MONO, FONT_SANS } from "./brand";
+import { LOGO_LOCKUP_LIGHT_DATA_URI } from "./logo";
 
 /**
  * The one wrapper every outbound email goes through: wordmark header, a
@@ -48,47 +48,18 @@ export function EmailLayout({
         }}
       >
         <Container style={{ maxWidth: 480, margin: "0 auto", width: "100%" }}>
-          {/* wordmark */}
-          <Row style={{ marginBottom: 20 }}>
-            <Column style={{ width: 28 }}>
-              <table cellPadding={0} cellSpacing={0} role="presentation">
-                <tbody>
-                  <tr>
-                    <td
-                      style={{
-                        width: 22,
-                        height: 22,
-                        borderRadius: 6,
-                        backgroundColor: brand.ink,
-                        textAlign: "center",
-                        verticalAlign: "middle",
-                        fontFamily: FONT_MONO,
-                        fontSize: 12,
-                        fontWeight: 700,
-                        color: brand.inkInvert,
-                        lineHeight: "22px",
-                      }}
-                    >
-                      S
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </Column>
-            <Column>
-              <Text
-                style={{
-                  margin: 0,
-                  fontSize: 15,
-                  fontWeight: 700,
-                  letterSpacing: "0.01em",
-                  color: brand.ink,
-                }}
-              >
-                SuSeeOS
-              </Text>
-            </Column>
-          </Row>
+          {/* wordmark — the real logo (public/logo/logo-lockup-light.svg),
+              inlined as a data URI. See templates/logo.ts for why it isn't
+              just <Img src={`${appBaseURL()}/logo/...`}>. */}
+          <Section style={{ marginBottom: 20 }}>
+            <Img
+              src={LOGO_LOCKUP_LIGHT_DATA_URI}
+              width={110}
+              height={22}
+              alt="SuSeeOS"
+              style={{ display: "block" }}
+            />
+          </Section>
 
           {/* card */}
           <Section

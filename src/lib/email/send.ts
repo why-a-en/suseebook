@@ -1,10 +1,15 @@
 import { Resend } from "resend";
+import { render } from "react-email";
 import { appBaseURL } from "@/lib/app-url";
+import { CredentialsEmail } from "./templates/credentials";
+import { InvitationEmail } from "./templates/invitation";
 
 // Outbound transactional mail, via Resend (docs/adr/0006-transactional-email.md).
 // Two messages: an invitation link for someone joining a Store, and (only on
 // an Admin-initiated reset) a generated temporary password. Keep this module
-// the single place that talks to Resend.
+// the single place that talks to Resend; the markup itself lives in
+// src/lib/email/templates/ as React Email components — this file only
+// renders one and hands the result to Resend.
 
 const FROM = process.env.EMAIL_FROM ?? "SuSeeOS <support@suseeos.com>";
 
@@ -21,12 +26,10 @@ function resend(): Resend {
   return client;
 }
 
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+/** Renders a template element to both parts Resend wants. */
+async function renderParts(node: React.ReactElement): Promise<{ html: string; text: string }> {
+  const [html, text] = await Promise.all([render(node), render(node, { plainText: true })]);
+  return { html, text };
 }
 
 /**
@@ -49,28 +52,10 @@ export async function sendCredentialsEmail(input: {
 }): Promise<void> {
   const { to, name, temporaryPassword, organizationName } = input;
   const loginUrl = `${appBaseURL()}/login`;
-  const lead = `Hi ${name}, an administrator has reset your SuSeeOS password for ${organizationName}.`;
 
-  const text = [
-    lead,
-    "",
-    `Sign in at: ${loginUrl}`,
-    `Email:    ${to}`,
-    `Password: ${temporaryPassword}`,
-    "",
-    "You'll be asked to choose a new password the first time you sign in.",
-    "If you weren't expecting this, you can ignore this email.",
-  ].join("\n");
-
-  const html = `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:15px;line-height:1.5;color:#1a1a1a;max-width:520px">
-  <p>${escapeHtml(lead)}</p>
-  <table cellpadding="0" cellspacing="0" style="margin:20px 0;border-collapse:collapse">
-    <tr><td style="padding:4px 16px 4px 0;color:#6b6b6b">Email</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">${escapeHtml(to)}</td></tr>
-    <tr><td style="padding:4px 16px 4px 0;color:#6b6b6b">Password</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:0.5px">${escapeHtml(temporaryPassword)}</td></tr>
-  </table>
-  <p><a href="${escapeHtml(loginUrl)}" style="display:inline-block;background:#1a1a1a;color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px">Sign in</a></p>
-  <p style="color:#6b6b6b;font-size:13px;margin-top:20px">You'll be asked to choose a new password the first time you sign in. If you weren't expecting this, you can ignore this email.</p>
-</div>`;
+  const { html, text } = await renderParts(
+    CredentialsEmail({ to, name, temporaryPassword, organizationName, loginUrl }),
+  );
 
   const { error } = await resend().emails.send({
     from: FROM,
@@ -104,18 +89,10 @@ export async function sendInvitationEmail(input: {
 }): Promise<void> {
   const { to, storeName, roleLabel, token, inviterName } = input;
   const url = `${appBaseURL()}/invite/accept?token=${encodeURIComponent(token)}`;
-  const lead = `You've been invited to join ${storeName} on SuSeeOS as ${roleLabel}.`;
-  const tail = inviterName
-    ? `This invite was sent by ${inviterName}. If you weren't expecting it, you can ignore this email.`
-    : "If you weren't expecting this, you can ignore this email.";
 
-  const text = [lead, "", `Accept your invitation: ${url}`, "", "You'll choose your own password when you accept.", tail].join("\n");
-
-  const html = `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:15px;line-height:1.5;color:#1a1a1a;max-width:520px">
-  <p>${escapeHtml(lead)}</p>
-  <p><a href="${escapeHtml(url)}" style="display:inline-block;background:#1a1a1a;color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px">Accept invitation</a></p>
-  <p style="color:#6b6b6b;font-size:13px;margin-top:20px">You'll choose your own password when you accept. ${escapeHtml(tail)}</p>
-</div>`;
+  const { html, text } = await renderParts(
+    InvitationEmail({ storeName, roleLabel, url, inviterName }),
+  );
 
   const { error } = await resend().emails.send({
     from: FROM,

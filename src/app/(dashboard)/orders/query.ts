@@ -2,7 +2,7 @@ import "server-only";
 
 import { and, asc, count, desc, eq, gte, ilike, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import { redirect } from "next/navigation";
-import { withCurrentOrganization, withCurrentStore } from "@/lib/tenancy";
+import { withCurrentOrganization } from "@/lib/tenancy";
 import { listMyStores } from "@/services/stores";
 import { orders, orderItems, customers } from "@/db/schema";
 import type { OrderRowData } from "./orders-view";
@@ -86,18 +86,18 @@ function escapeLike(value: string): string {
  * plus how many exist in total so the list can say what it is not showing.
  */
 export async function fetchCustomerBrowse(): Promise<{ rows: WizardCustomer[]; total: number }> {
-  return withCurrentStore(async ({ organizationId, storeId, tx }) => {
+  return withCurrentOrganization(async ({ organizationId, tx }) => {
     const rows = await tx
       .select({ id: customers.id, name: customers.name, phone: customers.phone, address: customers.address })
       .from(customers)
-      .where(and(eq(customers.organizationId, organizationId), eq(customers.storeId, storeId)))
+      .where(eq(customers.organizationId, organizationId))
       .orderBy(asc(customers.name))
       .limit(CUSTOMER_BROWSE_LIMIT);
 
     const [totalRow] = await tx
       .select({ value: count() })
       .from(customers)
-      .where(and(eq(customers.organizationId, organizationId), eq(customers.storeId, storeId)));
+      .where(eq(customers.organizationId, organizationId));
 
     return { rows, total: totalRow?.value ?? rows.length };
   });
@@ -120,14 +120,13 @@ export async function searchCustomers(query: string): Promise<WizardCustomer[]> 
   if (!q) return [];
   const pattern = `%${escapeLike(q)}%`;
 
-  return withCurrentStore(async ({ organizationId, storeId, tx }) =>
+  return withCurrentOrganization(async ({ organizationId, tx }) =>
     tx
       .select({ id: customers.id, name: customers.name, phone: customers.phone, address: customers.address })
       .from(customers)
       .where(
         and(
           eq(customers.organizationId, organizationId),
-          eq(customers.storeId, storeId),
           or(ilike(customers.name, pattern), ilike(customers.phone, pattern)),
         ),
       )

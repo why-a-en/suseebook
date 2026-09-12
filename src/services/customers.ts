@@ -26,11 +26,10 @@ export async function createCustomer(
   if (!name) throw new ServiceError("Name is required.");
   if (!phone) throw new ServiceError("Phone number is required.");
   if (!address) throw new ServiceError("Address is required.");
-  if (!ctx.storeId) throw new ServiceError("No active Store — pick one in Settings.");
 
   const [row] = await ctx.tx
     .insert(customers)
-    .values({ organizationId: ctx.organizationId, storeId: ctx.storeId, name, phone, address })
+    .values({ organizationId: ctx.organizationId, name, phone, address })
     .returning({ id: customers.id, name: customers.name, phone: customers.phone });
 
   return row;

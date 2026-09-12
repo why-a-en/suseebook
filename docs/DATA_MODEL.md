@@ -26,7 +26,6 @@ erDiagram
     MEMBERS ||--o{ MEMBER_STORES : "is granted"
     STORES ||--o{ MEMBER_STORES : "granted to"
     ORGANIZATIONS ||--o{ CUSTOMERS : has
-    STORES ||--o{ CUSTOMERS : "walked into"
     ORGANIZATIONS ||--o{ PRODUCTS : owns
     ORGANIZATIONS ||--o{ MODIFIERS : owns
     ORGANIZATIONS ||--o{ ORDERS : owns
@@ -346,20 +345,22 @@ company's customer data. Nothing in the app deletes from this table.
 **Index:** `(admin_user_id, started_at)`
 
 ### `customers`
-A real, searchable entity (PRD §5.3) — not free text on the order.
+A real, searchable entity (PRD §5.3) — not free text on the order. One
+record per person per tenant (ADR-0005 Phase 2), matching Products: no
+longer denormalized to the Store they first walked into, so a Customer
+placing at two Stores in the same Organization is one row, not two.
 
 | Column | Type | Notes |
 |---|---|---|
 | `id` | `uuid` PK | |
 | `organization_id` | `uuid` FK → `organizations.id` | |
-| `store_id` | `uuid` FK → `stores.id` NOT NULL | the counter this Customer walked into. Denormalized, filtered explicitly — not an RLS clause (see §4, §5) |
 | `name` | `text` NOT NULL | |
 | `phone` | `text` NOT NULL | |
 | `address` | `text` | nullable at the DB level only for a handful of test customers that predate this field — required on the create-customer form for everyone going forward; needed to actually ship a Purchased item |
 | `created_at` | `timestamptz` | default `now()` |
 
-**Index:** `(organization_id, store_id, name)` — powers search-or-create
-while logging an order, within the active Store
+**Index:** `(organization_id, name)` — powers search-or-create while
+logging an order, across every Store in the Organization
 
 ### `products`
 The catalog entry.
@@ -513,7 +514,7 @@ stored directly on every table anyway because:
    still catches it.
 
 **`store_id` is denormalized the same way** (onto `orders`,
-`order_items`, `customers`) — but for reason 1 only, not reason 2. It is
+`order_items`) — but for reason 1 only, not reason 2. It is
 *not* an RLS clause: Store is a tag, not a tenant boundary (CONTEXT.md), so
 a query that forgets its `store_id` filter shows the wrong Store's rows to
 someone in the *same* Organization — a bug, not a tenant leak. The denorm

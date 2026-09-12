@@ -59,7 +59,7 @@ export async function createCustomerAction(input: {
   phone: string;
   address: string;
 }) {
-  const customer = await withCurrentStore((ctx) => createCustomer(ctx, input));
+  const customer = await withCurrentOrganization((ctx) => createCustomer(ctx, input));
   revalidatePath("/customers");
   return customer;
 }

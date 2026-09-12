@@ -1,9 +1,7 @@
 import "server-only";
 
 import { and, asc, count, desc, eq, gte, ilike, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
-import { redirect } from "next/navigation";
 import { withCurrentOrganization } from "@/lib/tenancy";
-import { listMyStores } from "@/services/stores";
 import { orders, orderItems, customers } from "@/db/schema";
 import type { OrderRowData } from "./orders-view";
 import type { WizardCustomer } from "./new-order-wizard";
@@ -31,12 +29,6 @@ export interface OrdersFilters {
   to: string | null;
   q: string;
   status: "draft" | "placed";
-  /** One Store to narrow the log to, or null for every Store the caller is
-   *  granted. Only settable from the UI by a member with 2+ Store grants;
-   *  `fetchOrdersPage` re-checks it against those grants, so a value forwarded
-   *  from the client can only ever narrow the sender's own view — never widen
-   *  it past what they may see. */
-  storeId: string | null;
 }
 
 /** Keyset position: the last row of the page just returned.
@@ -147,42 +139,17 @@ export async function searchCustomers(query: string): Promise<WizardCustomer[]> 
  * the window would only ever look inside the newest page) is the same
  * argument for the other two.
  *
- * Scoped to the *Organization*, not one Store: the log spans every Store the
- * member is granted (Store is a tag, not a tenant boundary — see the `stores`
- * comment in db/schema.ts), and `filters.storeId` narrows to one of them. An
- * Admin running two counters can read either log without switching their
- * active Store.
+ * Scoped to the Organization — the tenant boundary, and (ADR-0005 Phase 3)
+ * the only scope there is.
  */
 export async function fetchOrdersPage(filters: OrdersFilters, cursor: OrdersCursor | null): Promise<OrdersPage> {
   const q = filters.q.trim();
 
-  return withCurrentOrganization(async ({ organizationId, userId, tx }) => {
-    // Every Store this member may work in — suspended ones included, so a
-    // Store going dark doesn't also hide its order history. `listMyStores`
-    // reads `member_stores` (hand-filtered by userId + org, as it must be),
-    // so this set is the ceiling on what the filter below can show.
-    const grantedStoreIds = (await listMyStores({ organizationId, storeId: null, userId, tx })).map(
-      (s) => s.id,
-    );
-    // Unreachable through normal navigation — the (dashboard) layout's own
-    // gate sends a member with no Store to /select-store first — but a direct
-    // Server Action call could land here. Same recovery.
-    if (grantedStoreIds.length === 0) redirect("/select-store");
-
-    // A `storeId` outside the grant set is ignored, not honoured — it falls
-    // back to "every granted Store" rather than showing nothing or erroring.
-    const storeIds =
-      filters.storeId && grantedStoreIds.includes(filters.storeId)
-        ? [filters.storeId]
-        : grantedStoreIds;
-    const storeScope =
-      storeIds.length === 1 ? eq(orders.storeId, storeIds[0]) : inArray(orders.storeId, storeIds);
-
+  return withCurrentOrganization(async ({ organizationId, tx }) => {
     // Shared by the page query and the COUNT below, so the two can't filter
     // differently. The cursor comparison is page-only and stays out of here.
     const scope = and(
       eq(orders.organizationId, organizationId),
-      storeScope,
       ...(filters.from ? [gte(orders.createdAt, new Date(filters.from))] : []),
       ...(filters.to ? [lte(orders.createdAt, new Date(filters.to))] : []),
       filters.status === "draft" ? isNull(orders.placedAt) : isNotNull(orders.placedAt),

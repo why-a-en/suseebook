@@ -1,9 +1,6 @@
 import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
-import { eq } from "drizzle-orm";
 import { requireUser, type AppRole } from "@/lib/auth";
-import { withCurrentOrganization } from "@/lib/tenancy";
-import { stores } from "@/db/schema";
 import { CenterTabBar } from "@/components/ui/center-tab-bar";
 import type { TabItem } from "@/components/ui/tab-bar";
 import { Toaster } from "@/components/ui/sonner";
@@ -47,27 +44,6 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   // Skipped while impersonating: a platform admin acting as this user must
   // not be pushed into a screen that would set that user's password.
   if (user.mustChangePassword && !user.impersonatedBy) redirect("/change-password");
-
-  // First-run onboarding. An Organization with no Store is non-functional —
-  // an Order can't be logged without one to attach it to — so this is a
-  // hard gate, not a nudge, and only the Admin can clear it (they're the
-  // only role that can create a Store). /onboarding sits in the (auth)
-  // group, outside this layout, so this can't redirect to itself. Not
-  // skipped while impersonating (unlike the password gate): picking or
-  // creating a Store has no lasting hazard the way setting a password does.
-  if (user.role === "admin") {
-    const [anyStore] = await withCurrentOrganization(({ organizationId, tx }) =>
-      tx.select({ id: stores.id }).from(stores).where(eq(stores.organizationId, organizationId)).limit(1),
-    );
-    if (!anyStore) redirect("/onboarding");
-  }
-
-  // Past that, every role needs an active Store resolved before any
-  // Store-scoped screen (Orders, Parcels, Customers, …) can render. Null
-  // means this member has 2+ grants and hasn't chosen, or — only reachable
-  // for a non-Admin whose grants were all removed — none at all.
-  // /select-store also sits outside this layout.
-  if (!user.storeId) redirect("/select-store");
 
   const { left, right } = NAV_BY_ROLE[user.role];
 

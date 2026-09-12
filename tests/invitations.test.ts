@@ -1,18 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { and, eq, inArray } from "drizzle-orm";
-import { db, withOrganizationScope } from "@/db/client";
+import { db } from "@/db/client";
 import { auth } from "@/lib/auth/config";
 import { hashPassword } from "@/lib/auth/hash";
-import {
-  accounts,
-  invitations,
-  memberStores,
-  members,
-  organizations,
-  sessions,
-  stores,
-  users,
-} from "@/db/schema";
+import { accounts, invitations, members, organizations, sessions, users } from "@/db/schema";
 import {
   acceptInvitationAsCurrentUser,
   acceptInvitationAsNewUser,
@@ -31,7 +22,6 @@ const TAG = `invite-${Date.now()}`;
 const PASSWORD = "password123";
 
 let orgId: string;
-let storeId: string;
 let adminUserId: string;
 let adminHeaders: Headers;
 const extraUserIds: string[] = [];
@@ -68,11 +58,6 @@ beforeAll(async () => {
   });
   await db.insert(members).values({ organizationId: orgId, userId: adminUserId, role: "admin" });
 
-  storeId = await withOrganizationScope(orgId, async (tx) => {
-    const [store] = await tx.insert(stores).values({ organizationId: orgId, name: `${TAG}-store` }).returning({ id: stores.id });
-    return store.id;
-  });
-
   // The session-create hook (config.ts) stamps activeOrganizationId from the
   // admin's sole membership, which is what lets createInvitation below infer
   // "this Organization" without it being passed explicitly.
@@ -83,12 +68,8 @@ afterAll(async () => {
   const memberRows = await db.select({ id: members.id, userId: members.userId }).from(members).where(eq(members.organizationId, orgId));
   const userIds = [...new Set([adminUserId, ...memberRows.map((m) => m.userId), ...extraUserIds])];
 
-  if (memberRows.length > 0) {
-    await db.delete(memberStores).where(inArray(memberStores.memberId, memberRows.map((m) => m.id)));
-  }
   await db.delete(members).where(eq(members.organizationId, orgId));
   await db.delete(invitations).where(eq(invitations.organizationId, orgId));
-  await withOrganizationScope(orgId, (tx) => tx.delete(stores).where(eq(stores.organizationId, orgId)));
   if (userIds.length > 0) {
     await db.delete(sessions).where(inArray(sessions.userId, userIds));
     await db.delete(accounts).where(inArray(accounts.userId, userIds));
@@ -127,7 +108,7 @@ describe("inviteToOrganization + getInvitationForAccept", () => {
 });
 
 describe("acceptInvitationAsNewUser", () => {
-  it("creates the account, the membership, a grant on every Store, and marks the invitation accepted", async () => {
+  it("creates the account and the membership, and marks the invitation accepted", async () => {
     const email = `${TAG}-accept-new@invite.test`;
     const { invitationId } = await inviteToOrganization({ email, role: "support_agent" }, adminHeaders);
 
@@ -149,9 +130,6 @@ describe("acceptInvitationAsNewUser", () => {
       .where(and(eq(members.organizationId, orgId), eq(members.userId, user.id)));
     expect(member.role).toBe("support_agent");
     expect(member.status).toBe("active");
-
-    const grants = await db.select({ storeId: memberStores.storeId }).from(memberStores).where(eq(memberStores.memberId, member.id));
-    expect(grants.map((g) => g.storeId)).toEqual([storeId]);
 
     // Not offered again — a second acceptance attempt is refused, below.
     const preview = await getInvitationForAccept(invitationId);

@@ -99,6 +99,13 @@
       "when": 1789205777675,
       "tag": "0013_customers_org_wide",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1789206803445,
+      "tag": "0014_store_as_tenant",
+      "breakpoints": true
     }
   ]
 }

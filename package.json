@@ -10,7 +10,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
-    "org:create": "tsx scripts/create-organization.mts",
+    "store:create": "tsx scripts/store-create.mts",
     "member:add": "tsx scripts/add-membership.mts",
     "platform:add": "tsx scripts/add-platform-admin.mts",
     "email:test": "tsx scripts/send-test-email.mts",

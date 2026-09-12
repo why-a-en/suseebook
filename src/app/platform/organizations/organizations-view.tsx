@@ -37,15 +37,15 @@ export function OrganizationsView({
 
   return (
     <Screen>
-      <TopBar backHref="/platform" title="Organizations" eyebrow="Operator" />
+      <TopBar backHref="/platform" title="Stores" eyebrow="Operator" />
       <ScrollBody>
-        <SectionHeader right={`${organizations.length}`}>All organizations</SectionHeader>
+        <SectionHeader right={`${organizations.length}`}>All Stores</SectionHeader>
 
         {organizations.length === 0 ? (
           <EmptyState
             icon="inbox"
-            title="No organizations yet."
-            body="Create one below — it provisions the Organization and its first Admin."
+            title="No Stores yet."
+            body="Create one below — it provisions the Store and invites its first Admin."
           />
         ) : (
           organizations.map((org) => (
@@ -68,7 +68,7 @@ export function OrganizationsView({
 
         <div className="px-5 pt-5 pb-8">
           <Button full variant="secondary" icon="plus" onClick={() => setCreating(true)}>
-            New organization
+            New Store
           </Button>
         </div>
       </ScrollBody>
@@ -102,7 +102,7 @@ function NewOrgForm({ onDone }: { onDone: () => void }) {
   if (state?.invitedEmail) {
     return (
       <>
-        <SheetHeader title="Organization created" />
+        <SheetHeader title="Store created" />
         <SheetBody>
           <div className="grid gap-3">
             <p className="font-ui text-small text-text-body">
@@ -110,8 +110,8 @@ function NewOrgForm({ onDone }: { onDone: () => void }) {
               invitation to <span className="font-medium">{state.invitedEmail}</span>.
             </p>
             <p className="font-ui text-small text-text-faint">
-              They&apos;ll set their own name and password on accept, then set up their first
-              Store and team when they log in.
+              They&apos;ll set their own name and password on accept, then land straight in — no
+              setup left for them to do.
             </p>
           </div>
         </SheetBody>
@@ -126,10 +126,10 @@ function NewOrgForm({ onDone }: { onDone: () => void }) {
 
   return (
     <>
-      <SheetHeader title="New organization" />
+      <SheetHeader title="New Store" />
       <form action={formAction}>
         <SheetBody className="grid gap-4">
-          <Field label="Organization name" required hint="The slug is derived from this.">
+          <Field label="Store name" required hint="The slug is derived from this.">
             <Input name="organizationName" autoComplete="off" placeholder="Acme Resale" />
           </Field>
           <Field label="First Admin — email" required>
@@ -139,7 +139,7 @@ function NewOrgForm({ onDone }: { onDone: () => void }) {
         </SheetBody>
         <SheetFooter>
           <Button full type="submit" disabled={pending}>
-            {pending ? "Creating…" : "Create organization"}
+            {pending ? "Creating…" : "Create Store"}
           </Button>
         </SheetFooter>
       </form>

@@ -24,17 +24,6 @@ export type AppRole = "admin" | "support_agent" | "supplier";
  */
 export type ServiceContext = {
   organizationId: string;
-  /**
-   * The active Store, or null when the caller has none resolved (a member
-   * with 2+ Stores who hasn't picked one, or — in practice unreachable
-   * through normal navigation — one with none at all). A tag, not a tenant
-   * boundary (see db/schema.ts's `stores` comment), so this is not RLS
-   * defense-in-depth the way organizationId is: it is the caller's job to
-   * check it before writing or reading anything store-scoped, the same way
-   * every other input is validated. See withCurrentStore in
-   * src/lib/tenancy.ts for the version that has already checked.
-   */
-  storeId: string | null;
   userId: string;
   tx: Db;
 };

@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
-import { withCurrentStore } from "@/lib/tenancy";
+import { withCurrentOrganization } from "@/lib/tenancy";
 import { orderItems, orders, products, customers, orderItemModifiers, modifierOptions } from "@/db/schema";
 import { ParcelsView, type ParcelItem, type ParcelStage } from "./parcels-view";
 
@@ -17,7 +17,7 @@ export default async function ParcelsPage({
   const statusFilter: readonly ParcelStage[] =
     status && (STAGES as readonly string[]).includes(status) ? [status as ParcelStage] : STAGES;
 
-  const items: ParcelItem[] = await withCurrentStore(async ({ organizationId, storeId, tx }) => {
+  const items: ParcelItem[] = await withCurrentOrganization(async ({ organizationId, tx }) => {
     const rows = await tx
       .select({
         id: orderItems.id,
@@ -37,7 +37,6 @@ export default async function ParcelsPage({
       .where(
         and(
           eq(orderItems.organizationId, organizationId),
-          eq(orderItems.storeId, storeId),
           inArray(orderItems.status, statusFilter),
         ),
       )

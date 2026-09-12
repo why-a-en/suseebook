@@ -1,8 +1,5 @@
 import { listMemberships, requireUser, roleLabel, type AppRole } from "@/lib/auth";
-import { withCurrentOrganization } from "@/lib/tenancy";
-import { listMyStores } from "@/services/stores";
 import { OrganizationSwitcher } from "./organization-switcher";
-import { StoreSwitcher } from "./store-switcher";
 import { Screen, ScrollBody } from "@/components/ui/screen";
 import { TopBar } from "@/components/ui/top-bar";
 import { SectionHeader } from "@/components/ui/section-header";
@@ -22,8 +19,10 @@ import { logoutAction } from "../actions";
 export default async function SettingsPage() {
   const user = await requireUser();
 
-  // Only Organizations the user can actually switch into: a suspended one
-  // would resolve to no session and bounce them to /login.
+  // Only Stores the user can actually switch into: a suspended one would
+  // resolve to no session and bounce them to /login. (The switcher is still
+  // named "Organization" internally — organization_id stays the tenant id,
+  // ADR-0005 §2 — but a Store is what it switches, one at a time.)
   const switchable = (await listMemberships(user.id))
     .filter((m) => m.status === "active")
     .map((m) => ({
@@ -33,13 +32,6 @@ export default async function SettingsPage() {
       roleLabel: roleLabel(m.role as AppRole),
     }));
 
-  // Only Stores this member can actually work in, and only the ones still
-  // active — a suspended one would bounce them straight back to
-  // /select-store.
-  const myStores = (await withCurrentOrganization((ctx) => listMyStores(ctx))).filter(
-    (s) => s.status === "active",
-  );
-
   return (
     <Screen>
       <TopBar brand title="Settings" eyebrow={roleLabel(user.role)} />
@@ -48,20 +40,11 @@ export default async function SettingsPage() {
             switcher with a single option is just a confusing readout. */}
         {switchable.length > 1 && (
           <>
-            <SectionHeader>Organization</SectionHeader>
+            <SectionHeader>Store</SectionHeader>
             <OrganizationSwitcher
               organizations={switchable}
               activeOrganizationId={user.organizationId}
             />
-          </>
-        )}
-
-        {/* Same rule as the Organization switcher above — hidden entirely
-            when there's only one Store to be in. */}
-        {myStores.length > 1 && (
-          <>
-            <SectionHeader>Store</SectionHeader>
-            <StoreSwitcher stores={myStores} activeStoreId={user.storeId} />
           </>
         )}
 

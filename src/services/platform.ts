@@ -11,18 +11,17 @@ import { ServiceError, type AppRole } from "./types";
 // createOrganization's own comment for why).
 const INVITATION_EXPIRES_IN_MS = 60 * 60 * 24 * 7 * 1000;
 
-// The platform console — provisioning and suspending client Organizations.
-// This is *us*, the operator, not a tenant Admin, so unlike every other
-// service here it doesn't take a `ServiceContext`: there is no Organization
-// to scope to (it creates one), and every table it touches — organizations,
-// users, accounts, members — is RLS-exempt (see DATA_MODEL §5). It imports
-// `db` directly for the same reason `withOrganizationScope` lives in
-// db/client rather than in a service.
+// The platform console — provisioning and suspending client Stores. This is
+// *us*, the operator, not a tenant Admin, so unlike every other service here
+// it doesn't take a `ServiceContext`: there is no Organization to scope to
+// (it creates one), and every table it touches — organizations, users,
+// accounts, members — is RLS-exempt (see DATA_MODEL §5). It imports `db`
+// directly for the same reason `withOrganizationScope` lives in db/client
+// rather than in a service.
 //
-// The one table it does NOT touch is `stores`: a new Organization is
-// deliberately created without one, so its Admin is walked through creating
-// the first Store (and their team) at /onboarding on first login — that
-// flow exists for exactly this. See ADR-0004 decision 6.
+// One `organizations` row IS the Store (ADR-0005 Phase 3 collapsed the
+// sub-Store layer this used to also provision) — nothing left for its Admin
+// to set up beyond accepting the invite below.
 
 export type OrganizationSummary = {
   id: string;
@@ -240,8 +239,8 @@ export type NewOrganization = {
 };
 
 /**
- * Creates a client Organization and invites its first Admin, in one
- * transaction — the in-app equivalent of `pnpm org:create`.
+ * Creates a client Store and invites its first Admin, in one
+ * transaction — the in-app equivalent of `pnpm store:create`.
  *
  * The invitation is written directly rather than through the org plugin's
  * `createInvitation` endpoint: that endpoint requires a session with an
@@ -259,7 +258,7 @@ export async function createOrganization(input: {
   const name = input.organizationName.trim();
   const adminEmail = input.adminEmail.trim().toLowerCase();
 
-  if (!name) throw new ServiceError("Organization name is required.");
+  if (!name) throw new ServiceError("Store name is required.");
   if (!isValidEmailSyntax(adminEmail)) throw new ServiceError("Enter a valid Admin email.");
 
   const slug = slugify(name);
@@ -272,7 +271,7 @@ export async function createOrganization(input: {
       .where(eq(organizations.slug, slug))
       .limit(1);
     if (slugTaken) {
-      throw new ServiceError(`An Organization named something like "${name}" already exists.`);
+      throw new ServiceError(`A Store named something like "${name}" already exists.`);
     }
 
     const [org] = await tx

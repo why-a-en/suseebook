@@ -10,7 +10,7 @@ import { Icon } from "@/components/icon";
 import { operatorLogoutAction } from "./actions";
 
 // The operator home. A glance at the whole platform, then the two jobs that
-// live here: provisioning client Organizations, and stepping into one to
+// live here: provisioning client Stores, and stepping into one to
 // help (impersonation).
 export default async function PlatformHome() {
   const user = await requirePlatformUser();
@@ -23,7 +23,7 @@ export default async function PlatformHome() {
       <TopBar brand title="Operator" eyebrow={user.email} />
       <ScrollBody>
         <div className="grid grid-cols-2 gap-3 px-5 pt-4">
-          <StatTile value={m.organizations.total} label="Organizations" />
+          <StatTile value={m.organizations.total} label="Stores" />
           <StatTile value={m.users} label="Users" />
         </div>
         <p className="px-5 pt-2 font-ui text-small text-text-faint">
@@ -34,7 +34,7 @@ export default async function PlatformHome() {
         </p>
         {m.organizations.suspended > 0 && (
           <p className="px-5 pt-1 font-ui text-small text-danger">
-            {m.organizations.suspended} organization
+            {m.organizations.suspended} Store
             {m.organizations.suspended === 1 ? "" : "s"} suspended
           </p>
         )}
@@ -42,7 +42,7 @@ export default async function PlatformHome() {
         <SectionHeader>Manage</SectionHeader>
         <Row href="/platform/organizations">
           <Icon name="inbox" size={18} className="shrink-0 text-text-faint" />
-          <span className="flex-1">Organizations</span>
+          <span className="flex-1">Stores</span>
           <Icon name="chevron-right" size={16} className="shrink-0 text-text-faint" />
         </Row>
         <Row href="/platform/users">

@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { withCurrentOrganization, withCurrentStore } from "@/lib/tenancy";
+import { withCurrentOrganization } from "@/lib/tenancy";
 import { createCustomer } from "@/services/customers";
 import { cancelOrderItem, deleteDraft, saveOrder, type SaveOrderInput } from "@/services/orders";
 import {
@@ -65,7 +65,7 @@ export async function createCustomerAction(input: {
 }
 
 export async function saveOrderAction(input: SaveOrderInput): Promise<{ orderId: string }> {
-  const { orderId, placed } = await withCurrentStore((ctx) => saveOrder(ctx, input));
+  const { orderId, placed } = await withCurrentOrganization((ctx) => saveOrder(ctx, input));
 
   revalidatePath("/orders");
   // Draft items feed the Purchase Queue too (there's no placed_at gate on
@@ -79,7 +79,7 @@ export async function saveOrderAction(input: SaveOrderInput): Promise<{ orderId:
 
 /** Deletes a draft order (see deleteDraft — pending/cancelled items only). */
 export async function deleteDraftAction(orderId: string): Promise<void> {
-  await withCurrentStore((ctx) => deleteDraft(ctx, { orderId }));
+  await withCurrentOrganization((ctx) => deleteDraft(ctx, { orderId }));
   revalidatePath("/orders");
   revalidatePath("/purchase-queue");
   revalidatePath("/parcels");

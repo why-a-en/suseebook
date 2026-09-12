@@ -1,5 +1,5 @@
 import { asc, and, eq, gte, lte, inArray } from "drizzle-orm";
-import { withCurrentStore } from "@/lib/tenancy";
+import { withCurrentOrganization } from "@/lib/tenancy";
 import { orderItems, orders, products, productImages, customers, orderItemModifiers, modifierOptions } from "@/db/schema";
 import { resolveDateWindow } from "@/lib/date-range";
 import { PurchaseQueueView, type PurchaseGroup } from "./purchase-queue-view";
@@ -22,7 +22,7 @@ export default async function PurchaseQueuePage({ searchParams }: { searchParams
   // days after its order was started is today's demand, not that day's.
   const dateWindow = resolveDateWindow(await searchParams);
 
-  const groups = await withCurrentStore(async ({ organizationId, storeId, tx }) => {
+  const groups = await withCurrentOrganization(async ({ organizationId, tx }) => {
     const rows = await tx
       .select({
         orderItemId: orderItems.id,
@@ -40,7 +40,6 @@ export default async function PurchaseQueuePage({ searchParams }: { searchParams
       .where(
         and(
           eq(orderItems.organizationId, organizationId),
-          eq(orderItems.storeId, storeId),
           eq(orderItems.status, "pending"),
           ...(dateWindow.from ? [gte(orderItems.createdAt, dateWindow.from)] : []),
           ...(dateWindow.to ? [lte(orderItems.createdAt, dateWindow.to)] : []),

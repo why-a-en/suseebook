@@ -4,7 +4,12 @@ import { revalidatePath } from "next/cache";
 import { requirePlatformUser, roleLabel } from "@/lib/auth";
 import { assertDeliverableEmail, normalizeEmail } from "@/lib/email/address";
 import { sendInvitationEmail } from "@/lib/email/send";
-import { createOrganization, setOrganizationStatus } from "@/services/platform";
+import {
+  cancelPlatformInvitation,
+  createOrganization,
+  resendPlatformInvitation,
+  setOrganizationStatus,
+} from "@/services/platform";
 import { ServiceError } from "@/services/types";
 
 // Thin wrappers — rules live in src/services/platform.ts. requirePlatformUser()
@@ -46,8 +51,8 @@ export async function createOrganizationAction(
 
   // The invitations row already exists — created is the record, not a
   // credential that vanishes if this send fails. If Resend won't take it,
-  // say so; a resend from here is future work (Task 6's other half), so for
-  // now the operator's recourse is Support reaching out directly.
+  // say so; resendOrganizationInvitationAction below is exactly that
+  // recourse, from the Store's own detail page.
   try {
     await sendInvitationEmail({
       to: created.adminEmail,
@@ -82,4 +87,53 @@ export async function setOrganizationStatusAction(
     if (error instanceof ServiceError) return { error: error.message };
     throw error;
   }
+}
+
+/** Re-sends a still-pending invitation issued from `/platform` — the
+ *  operator's recourse when the first send bounced or was lost. */
+export async function resendOrganizationInvitationAction(
+  organizationId: string,
+  invitationId: string,
+): Promise<PlatformActionResult> {
+  const platformUser = await requirePlatformUser();
+
+  let resent: Awaited<ReturnType<typeof resendPlatformInvitation>>;
+  try {
+    resent = await resendPlatformInvitation(invitationId, platformUser.id);
+  } catch (error) {
+    if (error instanceof ServiceError) return { error: error.message };
+    throw error;
+  }
+
+  revalidatePath(`/platform/organizations/${organizationId}`);
+
+  try {
+    await sendInvitationEmail({
+      to: resent.email,
+      storeName: resent.organizationName,
+      roleLabel: roleLabel(resent.role),
+      token: resent.invitationId,
+      inviterName: platformUser.name,
+    });
+  } catch {
+    return { error: "Resent, but the email failed to send." };
+  }
+
+  return {};
+}
+
+/** Revokes a still-pending invitation issued from `/platform`. */
+export async function cancelOrganizationInvitationAction(
+  organizationId: string,
+  invitationId: string,
+): Promise<PlatformActionResult> {
+  await requirePlatformUser();
+  try {
+    await cancelPlatformInvitation(invitationId);
+  } catch (error) {
+    if (error instanceof ServiceError) return { error: error.message };
+    throw error;
+  }
+  revalidatePath(`/platform/organizations/${organizationId}`);
+  return {};
 }

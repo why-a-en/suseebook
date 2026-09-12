@@ -1,4 +1,4 @@
-import { count, desc, eq, gte } from "drizzle-orm";
+import { and, count, desc, eq, gt, gte } from "drizzle-orm";
 import { db } from "@/db/client";
 import { invitations, members, organizations, users } from "@/db/schema";
 import { isPlatformAdmin } from "@/lib/auth/platform-admins";
@@ -64,9 +64,20 @@ export type OrganizationDetail = {
     status: "active" | "suspended";
     joinedAt: Date;
   }[];
+  /** Still-pending, not-yet-expired invitations — almost always just the
+   *  first Admin's, until it's accepted. See resendPlatformInvitation /
+   *  cancelPlatformInvitation below for why this isn't the same
+   *  listPendingInvitations() the tenant Staff screen uses. */
+  pendingInvitations: {
+    id: string;
+    email: string;
+    role: AppRole;
+    expiresAt: Date;
+  }[];
 };
 
-/** One Organization and everyone in it. Null for an unknown id. */
+/** One Organization, everyone in it, and anyone still waiting to accept.
+ *  Null for an unknown id. */
 export async function getOrganizationDetail(
   organizationId: string,
 ): Promise<OrganizationDetail | null> {
@@ -97,9 +108,17 @@ export async function getOrganizationDetail(
     .where(eq(members.organizationId, organizationId))
     .orderBy(members.createdAt);
 
+  const now = new Date();
+  const inviteRows = await db
+    .select({ id: invitations.id, email: invitations.email, role: invitations.role, expiresAt: invitations.expiresAt })
+    .from(invitations)
+    .where(and(eq(invitations.organizationId, organizationId), eq(invitations.status, "pending"), gt(invitations.expiresAt, now)))
+    .orderBy(desc(invitations.createdAt));
+
   return {
     ...org,
     members: rows.map((r) => ({ ...r, role: r.role as AppRole })),
+    pendingInvitations: inviteRows.map((r) => ({ ...r, role: (r.role ?? "admin") as AppRole })),
   };
 }
 
@@ -307,4 +326,70 @@ export async function setOrganizationStatus(input: {
     .update(organizations)
     .set({ status: input.status })
     .where(eq(organizations.id, input.organizationId));
+}
+
+export type ResentInvitation = {
+  invitationId: string;
+  email: string;
+  role: AppRole;
+  organizationName: string;
+};
+
+/**
+ * Resends a still-pending invitation from the operator console — cancels
+ * the old row and writes a fresh one (new id/token, new 7-day window), the
+ * same shape config.ts's `cancelPendingInvitationsOnReInvite` gives a
+ * tenant Admin's resend. Can't reuse auth/index.ts's `inviteToOrganization`
+ * for this: it infers *which* Organization from the caller's own active
+ * membership (`auth.api.createInvitation`), and a Platform Admin has none —
+ * the same reason `createOrganization` above writes its row directly.
+ */
+export async function resendPlatformInvitation(
+  invitationId: string,
+  invitedById: string,
+): Promise<ResentInvitation> {
+  return db.transaction(async (tx) => {
+    const [pending] = await tx
+      .select()
+      .from(invitations)
+      .where(and(eq(invitations.id, invitationId), eq(invitations.status, "pending")))
+      .limit(1);
+    if (!pending) throw new ServiceError("That invitation is no longer pending.");
+
+    await tx.update(invitations).set({ status: "cancelled" }).where(eq(invitations.id, invitationId));
+
+    const [fresh] = await tx
+      .insert(invitations)
+      .values({
+        organizationId: pending.organizationId,
+        email: pending.email,
+        role: pending.role,
+        inviterId: invitedById,
+        expiresAt: new Date(Date.now() + INVITATION_EXPIRES_IN_MS),
+      })
+      .returning({ id: invitations.id });
+
+    const [org] = await tx
+      .select({ name: organizations.name })
+      .from(organizations)
+      .where(eq(organizations.id, pending.organizationId))
+      .limit(1);
+
+    return {
+      invitationId: fresh.id,
+      email: pending.email,
+      role: (pending.role ?? "admin") as AppRole,
+      organizationName: org?.name ?? "",
+    };
+  });
+}
+
+/** Revokes a still-pending invitation from the operator console. Same
+ *  reasoning as resendPlatformInvitation above for why this is a direct
+ *  write rather than `auth.api.cancelInvitation`. */
+export async function cancelPlatformInvitation(invitationId: string): Promise<void> {
+  await db
+    .update(invitations)
+    .set({ status: "cancelled" })
+    .where(and(eq(invitations.id, invitationId), eq(invitations.status, "pending")));
 }

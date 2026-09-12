@@ -156,6 +156,16 @@ describe("acceptInvitationAsNewUser", () => {
     // Not offered again — a second acceptance attempt is refused, below.
     const preview = await getInvitationForAccept(invitationId);
     expect(preview!.valid).toBe(false);
+
+    // The regression this guards: the membership has to exist *before* the
+    // first session is created for this account, or the session-create
+    // hook (config.ts) stamps activeOrganizationId null and the 5-minute
+    // cookie cache serves that null regardless of what the database says
+    // afterward. Signing in fresh and reading the session straight back —
+    // not the database — is what actually proves the ordering worked.
+    const freshSession = await sessionHeadersFor(email, PASSWORD);
+    const session = await auth.api.getSession({ headers: freshSession });
+    expect(session?.session.activeOrganizationId).toBe(orgId);
   });
 
   it("refuses an expired invitation, and does not create an account for it", async () => {
@@ -209,6 +219,15 @@ describe("acceptInvitationAsCurrentUser", () => {
       .from(members)
       .where(and(eq(members.organizationId, orgId), eq(members.userId, user.id)));
     expect(member.role).toBe("supplier");
+
+    // The regression this guards: better-auth's session cookie caches a
+    // signed snapshot for 5 minutes (config.ts's cookieCache). A raw write
+    // to the sessions table is invisible to a cookie already cached before
+    // it ran — re-reading with the *same* cookie the invitee is holding is
+    // the only way to prove the accept is actually visible to them, not
+    // just correct in the database.
+    const refreshed = await auth.api.getSession({ headers: theirHeaders });
+    expect(refreshed?.session.activeOrganizationId).toBe(orgId);
   });
 
   it("refuses when signed in as a different email than the invitation", async () => {

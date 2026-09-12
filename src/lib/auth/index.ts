@@ -2,8 +2,19 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { db, withOrganizationScope } from "@/db/client";
-import { impersonationEvents, invitations, memberStores, members, organizations, sessions, stores, users } from "@/db/schema";
+import {
+  accounts,
+  impersonationEvents,
+  invitations,
+  memberStores,
+  members,
+  organizations,
+  sessions,
+  stores,
+  users,
+} from "@/db/schema";
 import { auth } from "./config";
+import { hashPassword } from "./hash";
 import { isPlatformAdmin } from "./platform-admins";
 
 export { isPlatformAdmin } from "./platform-admins";
@@ -469,15 +480,16 @@ export async function getInvitationForAccept(token: string): Promise<InvitationP
  *
  *  Grants every Store the Organization currently has: ADR-0004's per-Store
  *  grant picker isn't reachable from an invitation yet, and ADR-0005 removes
- *  the distinction in Phase 3 anyway. Stamps this Organization active on
- *  *this one* session only (by token) — not every session the invitee has,
- *  which would yank a multi-Organization Supplier's other open sessions into
- *  this Organization too. */
-async function finalizeAcceptance(
-  invitationId: string,
-  userId: string,
-  sessionToken: string,
-): Promise<{ organizationId: string }> {
+ *  the distinction in Phase 3 anyway.
+ *
+ *  Does NOT touch any session — that used to be a raw `sessions` update
+ *  here, and it was wrong: better-auth's session cookie *caches* a signed
+ *  snapshot of the session for 5 minutes (config.ts's `cookieCache`), and a
+ *  write straight to the table is invisible to a cookie that was cached
+ *  before this ran. Both callers below establish or refresh the session
+ *  *after* this returns, through a real better-auth call, which is what
+ *  actually re-signs the cookie. */
+async function finalizeAcceptance(invitationId: string, userId: string): Promise<{ organizationId: string }> {
   // `invitations` carries no RLS (it must be readable before the
   // Organization scope exists at all — see its schema comment), so this
   // plain read is only to learn *which* Organization to scope the rest of
@@ -523,26 +535,26 @@ async function finalizeAcceptance(
         .onConflictDoNothing();
     }
 
-    await tx
-      .update(sessions)
-      .set({ activeOrganizationId: accepted.organizationId, activeStoreId: null, updatedAt: new Date() })
-      .where(eq(sessions.token, sessionToken));
-
     return { organizationId: accepted.organizationId };
   });
 }
 
 /** Accept path for an email the platform has never seen: creates the
  *  account (their own name + password — nobody else ever sets either,
- *  ADR-0005 §5) and signs them in, then accepts.
+ *  ADR-0005 §5), grants the membership, *then* signs in.
  *
- *  Deliberately not `signUpEmail` immediately followed by a plugin
- *  `acceptInvitation` call in the same action: the invitee's session cookie
- *  from the sign-up doesn't reach the following `auth.api` call within one
- *  server action (better-auth reads it from the *incoming* request headers,
- *  which are already fixed for this request). finalizeAcceptance() does the
- *  membership write directly instead — same effect, no cookie relay needed
- *  — and this function only has to make sure a session exists at all. */
+ *  That order is load-bearing, not incidental. `auth.api.signUpEmail` would
+ *  create the account and a session in one call — but the session-create
+ *  hook (config.ts) reads `activeOrganizationId` off whatever membership
+ *  exists *at that instant*, and finds none yet. The resulting session
+ *  cookie caches that null for 5 minutes; finalizeAcceptance granting the
+ *  membership a moment later doesn't reach an already-cached cookie.
+ *  Creating the account and the membership first, then signing in, means
+ *  the hook sees the real membership the only time it looks. Written by
+ *  hand (not signUpEmail) for the same reason services/staff.ts's old
+ *  addStaff was: signUpEmail issues a session immediately, which here would
+ *  mean creating it before the membership exists — the exact problem this
+ *  ordering avoids. */
 export async function acceptInvitationAsNewUser(
   token: string,
   input: { name: string; password: string },
@@ -551,12 +563,28 @@ export async function acceptInvitationAsNewUser(
   const invitation = await getInvitationForAccept(token);
   if (!invitation || !invitation.valid) throw new Error("This invitation is no longer valid.");
 
-  const result = await auth.api.signUpEmail({
-    body: { email: invitation.email, name: input.name, password: input.password },
+  const [user] = await db
+    .insert(users)
+    // Verified by construction: only someone who controls this inbox could
+    // have reached this form at all.
+    .values({ name: input.name, email: invitation.email, emailVerified: true })
+    .returning({ id: users.id });
+  await db.insert(accounts).values({
+    issuer: "local:credential",
+    accountId: user.id,
+    providerId: "credential",
+    userId: user.id,
+    password: await hashPassword(input.password),
+  });
+
+  const { organizationId } = await finalizeAcceptance(token, user.id);
+
+  await auth.api.signInEmail({
+    body: { email: invitation.email, password: input.password },
     headers: await resolveHeaders(reqHeaders),
   });
-  if (!result.token) throw new Error("Couldn't start a session for the new account.");
-  return finalizeAcceptance(token, result.user.id, result.token);
+
+  return { organizationId };
 }
 
 /** Accept path for someone already signed in as the invited address
@@ -567,7 +595,8 @@ export async function acceptInvitationAsCurrentUser(
   token: string,
   reqHeaders?: Headers,
 ): Promise<{ organizationId: string }> {
-  const session = await auth.api.getSession({ headers: await resolveHeaders(reqHeaders) });
+  const requestHeaders = await resolveHeaders(reqHeaders);
+  const session = await auth.api.getSession({ headers: requestHeaders });
   if (!session) redirect("/login");
 
   const invitation = await getInvitationForAccept(token);
@@ -576,7 +605,24 @@ export async function acceptInvitationAsCurrentUser(
     throw new Error("You're signed in with a different email than this invitation was sent to.");
   }
 
-  return finalizeAcceptance(token, session.user.id, session.session.token);
+  const { organizationId } = await finalizeAcceptance(token, session.user.id);
+
+  // Re-stamps the *live* session's active Organization through the plugin's
+  // own endpoint rather than a raw table write — setActiveOrganization
+  // re-signs the session cookie (setSessionCookie, inside the plugin),
+  // which is what actually makes the change visible; a direct write would
+  // hit the same stale-cookie-cache problem finalizeAcceptance's comment
+  // describes. It also re-checks membership, which by now exists.
+  await auth.api.setActiveOrganization({ body: { organizationId }, headers: requestHeaders });
+
+  // activeStoreId isn't a better-auth field (no plugin owns it — see
+  // setActiveStore's own comment), so switching Organization above doesn't
+  // clear it the way setActiveOrganization clears everything it does know
+  // about. Left alone, a Store from whichever Organization was active
+  // before would carry over into this one.
+  await db.update(sessions).set({ activeStoreId: null }).where(eq(sessions.token, session.session.token));
+
+  return { organizationId };
 }
 
 export type PendingInvitation = {
